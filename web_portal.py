@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_crud_patch import app
+from web_debt_patch import app
 
 if __name__ == '__main__':
     import os
