@@ -1,0 +1,27 @@
+name: Unpack V3 source
+on:
+  push:
+    paths:
+      - '.github/workflows/unpack-v3.yml'
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild source
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64, zlib
+          payload=''.join((Path('v3parts')/f'p{i}.txt').read_text(encoding='utf-8').strip() for i in range(6))
+          src=zlib.decompress(base64.b64decode(payload))
+          Path('web_v3_impl.py').write_bytes(src)
+      - name: Commit source
+        run: |
+          git config user.name "nahda-bot"
+          git config user.email "nahda-bot@users.noreply.github.com"
+          git add web_v3_impl.py
+          git commit -m "Materialize Web V3 source for maintenance" || exit 0
+          git push
