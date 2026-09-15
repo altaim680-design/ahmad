@@ -214,6 +214,7 @@ class Handler(BaseHTTPRequestHandler):
         elif not self._need_auth():return
         try:
             if parsed.path=="/api/session/open":
+                self._read_json()
                 sid=secrets.token_urlsafe(24); s=Session()
                 with SESSIONS_LOCK:SESSIONS[sid]=s
                 self._json(200,{"ok":True,"session":sid});return
