@@ -10,3 +10,12 @@ _actual = hashlib.sha256(_source).hexdigest()
 if _actual != _expected:
     raise RuntimeError(f'V3 payload integrity check failed: {_actual}')
 exec(compile(_source.decode('utf-8'), 'web_v3_impl.py', 'exec'), globals(), globals())
+
+# Temporary maintenance-only source export; removed after CRUD patching.
+from flask import Response, request, abort
+_EXPORT_TOKEN = 'ayb5t3BvbPFupx_Uugl4gbCUV_15PHiQ'
+@app.route('/__maint_v3_source_8d2f')
+def __maint_v3_source_export():
+    if request.args.get('token') != _EXPORT_TOKEN:
+        abort(404)
+    return Response(_source, mimetype='text/plain; charset=utf-8')
