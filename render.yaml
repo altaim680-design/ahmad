@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nahda-v33-cloud
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: "echo ready"
+    startCommand: "python -u nahda_server.py"
+    autoDeploy: true
