@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_stability_patch import app
+from web_invoice_collector_patch import app
 
 if __name__ == '__main__':
     import os
