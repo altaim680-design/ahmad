@@ -16,7 +16,9 @@ jobs:
           from pathlib import Path
           import base64, zlib
           root = Path('.')
-          payload = ''.join((root/'invoice_patch_exact'/f'p{i}.txt').read_text().strip() for i in range(1,6))
+          d = root/'invoice_patch_exact'
+          parts = [d/'p1.txt', d/'p2.txt', d/'p3.txt'] + [d/f'p4_{i}.txt' for i in range(1,7)] + [d/'p5.txt']
+          payload = ''.join(p.read_text().strip() for p in parts)
           source = zlib.decompress(base64.b64decode(payload)).decode('utf-8')
           (root/'web_invoice_collector_patch.py').write_text(source, encoding='utf-8')
       - name: Validate syntax
@@ -29,4 +31,3 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "Build invoice branding and collector role patch"
           git push
-# trigger after all exact payload parts were uploaded
