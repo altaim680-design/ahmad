@@ -171,8 +171,15 @@ class Handler(BaseHTTPRequestHandler):
     def _need_admin(self):
         if not self._admin(): self._json(403,{"ok":False,"error":"هذه العملية تحتاج مفتاح إدارة الخادم"}); return False
         return True
+    def do_HEAD(self):
+        parsed=urllib.parse.urlparse(self.path)
+        if parsed.path in {"/", "/api/health"}:
+            self.send_response(200); self.send_header("Content-Length","0"); self.send_header("Cache-Control","no-store"); self.end_headers(); return
+        self.send_response(404); self.send_header("Content-Length","0"); self.end_headers()
     def do_GET(self):
         parsed=urllib.parse.urlparse(self.path)
+        if parsed.path=="/":
+            self._json(200,{"ok":True,"service":"Nahda Syria Cloud","version":33}); return
         if parsed.path=="/api/health":
             if not self._need_auth():return
             proto=self.headers.get("X-Forwarded-Proto") or "http"
@@ -277,7 +284,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     host=str(CFG.get("host","0.0.0.0"));port=int(CFG.get("port",8765))
-    print("="*72);print("Nahda Syria V33 Cloud Server");print("Server:",CFG.get("server_name"));print("Listening: http://%s:%s"%(host,port));print("Data:",DATA_DIR);print("Database:",DB_PATH);print("API key:",CFG.get("api_key"));print("Admin key:",CFG.get("admin_key"));print("Automatic backup: every %s h / retention %s days"%(CFG.get("backup_interval_hours"),CFG.get("backup_retention_days")));print("Internet use: place behind HTTPS or private VPN/Tailscale.");print("="*72)
+    print("="*72);print("Nahda Syria V33 Cloud Server");print("Server:",CFG.get("server_name"));print("Listening: http://%s:%s"%(host,port));print("Data:",DATA_DIR);print("Database:",DB_PATH);print("API key: [hidden]");print("Admin key: [hidden]");print("Automatic backup: every %s h / retention %s days"%(CFG.get("backup_interval_hours"),CFG.get("backup_retention_days")));print("Internet use: place behind HTTPS or private VPN/Tailscale.");print("="*72)
     srv=ThreadingHTTPServer((host,port),Handler);srv.daemon_threads=True;srv.serve_forever()
 
 if __name__=="__main__":main()
