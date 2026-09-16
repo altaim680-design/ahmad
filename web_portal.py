@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_trip_tenant_hotfix import app
+from web_recovery_diagnostic import app
 
 if __name__ == '__main__':
     import os
