@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_invoice_barcode_patch import app
+from web_sporthub_patch import app
 
 if __name__ == '__main__':
     import os
