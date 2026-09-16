@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Temporary read-only diagnostics for tenant recovery.
-Prints only tenant/user ids and row counts; does not modify business data.
+Prints only backend type, tenant/user ids and row counts; does not modify business data.
 """
 import json
 from sqlalchemy import text
@@ -17,7 +17,11 @@ def _rows(sql):
 
 with app.app_context():
     try:
+        url = db.engine.url
         diag = {
+            'db_backend': url.drivername,
+            'db_database': url.database,
+            'db_host': url.host,
             'tenants': _rows("SELECT id, code, name, active FROM system_tenant ORDER BY id"),
             'users': _rows('SELECT id, username, login_name, email, role, tenant_id, system_owner, active FROM "user" ORDER BY id'),
             'company': _rows('SELECT tenant_id, COUNT(*) AS count FROM company GROUP BY tenant_id ORDER BY tenant_id'),
