@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_sporthub_storefront_v3 import app
+from web_sporthub_access_v4 import app
 
 if __name__ == '__main__':
     import os
