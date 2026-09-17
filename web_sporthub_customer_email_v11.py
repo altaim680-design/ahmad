@@ -528,3 +528,12 @@ if 'sporthub_customer_shop' in app.view_functions:
     app.view_functions['sporthub_customer_shop'] = premium_storefront_v11
 
 print('SPORTHUB_V11_CUSTOMER_EMAIL_READY smtp=' + ('1' if _email_ready() else '0'), flush=True)
+
+try:
+    with app.test_client() as _tc:
+        _s1 = _tc.get('/sporthub/customer/status').status_code
+        _s2 = _tc.get('/sporthub/customer/login').status_code
+        _s3 = _tc.get('/sporthub/shop').status_code
+    print(f'SPORTHUB_V11_SELFTEST status={_s1} login={_s2} shop={_s3}', flush=True)
+except Exception as _exc:
+    print('SPORTHUB_V11_SELFTEST_ERROR', type(_exc).__name__, flush=True)
