@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """SPORT HUB V10 - persistent product images.
 
-Adds image upload/editing for products without relying on Render's ephemeral
-filesystem. Images are stored in Postgres and served through a dedicated route.
+Adds product image upload/editing without using the web service filesystem.
+The migration works with both SQLite and PostgreSQL deployments.
 """
 from flask import request, redirect, flash, abort, jsonify, render_template_string
 from sqlalchemy import text
@@ -27,9 +27,17 @@ _MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 
 def _migrate_product_images():
+    dialect = (db.engine.dialect.name or '').lower()
     with db.engine.begin() as conn:
-        conn.execute(text('ALTER TABLE sporthub_product ADD COLUMN IF NOT EXISTS image_data BYTEA'))
-        conn.execute(text("ALTER TABLE sporthub_product ADD COLUMN IF NOT EXISTS image_mime VARCHAR(100) DEFAULT ''"))
+        if dialect == 'sqlite':
+            columns = {str(r[1]) for r in conn.execute(text('PRAGMA table_info(sporthub_product)')).all()}
+            if 'image_data' not in columns:
+                conn.execute(text('ALTER TABLE sporthub_product ADD COLUMN image_data BLOB'))
+            if 'image_mime' not in columns:
+                conn.execute(text("ALTER TABLE sporthub_product ADD COLUMN image_mime VARCHAR(100) DEFAULT ''"))
+        else:
+            conn.execute(text('ALTER TABLE sporthub_product ADD COLUMN IF NOT EXISTS image_data BYTEA'))
+            conn.execute(text("ALTER TABLE sporthub_product ADD COLUMN IF NOT EXISTS image_mime VARCHAR(100) DEFAULT ''"))
 
 
 def _valid_magic(raw, mime):
@@ -76,14 +84,11 @@ def _remove_product_image(pid):
 
 
 def _image_product_ids(ids=None):
-    if ids is not None and not ids:
-        return set()
-    sql = 'SELECT id FROM sporthub_product WHERE image_data IS NOT NULL'
-    params = {}
-    if ids is not None:
-        sql += ' AND id = ANY(:ids)'
-        params['ids'] = list(map(int, ids))
-    return {int(r[0]) for r in db.session.execute(text(sql), params).all()}
+    present = {int(r[0]) for r in db.session.execute(text('SELECT id FROM sporthub_product WHERE image_data IS NOT NULL')).all()}
+    if ids is None:
+        return present
+    wanted = {int(x) for x in ids}
+    return present.intersection(wanted)
 
 
 with app.app_context():
@@ -270,8 +275,6 @@ def product_save_v10(pid):
     return redirect('/sporthub/admin/products')
 
 
-# V8 dispatches directly through these module attributes, so patch both the
-# functions and the original Flask endpoints.
 v5.products_v5 = products_v10
 v5.product_new_v5 = product_new_v10
 v5.product_save_v5 = product_save_v10
@@ -283,8 +286,6 @@ if 'sporthub_admin_products_save_v2' in app.view_functions:
     app.view_functions['sporthub_admin_products_save_v2'] = product_save_v10
 
 
-# Upgrade the premium storefront without duplicating the whole template.
-# If an image exists, use it; otherwise retain the current styled placeholder.
 _img_css = '.productimg{width:100%;height:100%;object-fit:cover;display:block}.pvisual.hasimg{background:#fff}'
 if _img_css not in store.STORE_HTML:
     store.STORE_HTML = store.STORE_HTML.replace('</style>', _img_css + '</style>', 1)
