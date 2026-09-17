@@ -1,10 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SPORT HUB V9 stale-session recovery.
-
-A Club Admin session can outlive its club/account. V5 then calls get_or_404 on
-that stale club id, which looks like a missing admin page. Clear invalid club
-sessions before the V8 admin router runs so the user is sent back to login.
-"""
+"""SPORT HUB V9 stale-session recovery and club-admin verification."""
 from flask import request, session, redirect
 import web_sporthub_hotfix_v8 as v8
 import web_sporthub_marketplace_v5 as v5
@@ -39,12 +34,11 @@ def _stale_club_session_guard():
             return redirect('/sporthub/admin/login')
     return None
 
-# Run this before V8's admin router. Flask stores global before_request handlers
-# in registration order, so insert at the front intentionally.
+# Run before V8's admin router.
 app.before_request_funcs.setdefault(None, []).insert(0, _stale_club_session_guard)
 
-# Startup checks: anonymous admin redirects; a deliberately stale club session
-# must also redirect to login instead of returning 404.
+# Startup checks: anonymous and deliberately stale sessions must redirect, and
+# a real active Club Admin must be able to open dashboard/products/orders.
 try:
     with app.test_client() as _client:
         _anon = _client.get('/sporthub/admin', follow_redirects=False)
@@ -55,5 +49,21 @@ try:
             _s['sporthub_admin_user'] = '__stale__'
         _stale = _client.get('/sporthub/admin', follow_redirects=False)
         print(f'SPORTHUB_V9_SELFTEST anonymous={_anon.status_code} stale={_stale.status_code} location={_stale.headers.get("Location", "")}', flush=True)
+
+        _acct = v5.SportClubAccount.query.filter_by(active=True).order_by(v5.SportClubAccount.id.desc()).first()
+        if _acct:
+            _club = v5.SportClub.query.filter_by(id=_acct.club_id, active=True).first()
+            if _club:
+                with _client.session_transaction() as _s:
+                    _s.clear()
+                    _s['sporthub_admin'] = True
+                    _s['sporthub_role'] = 'club'
+                    _s['sporthub_club_id'] = _club.id
+                    _s['sporthub_admin_user'] = _acct.username
+                    _s['sporthub_club_name'] = _club.name
+                _dash = _client.get('/sporthub/admin', follow_redirects=False)
+                _prod = _client.get('/sporthub/admin/products', follow_redirects=False)
+                _ord = _client.get('/sporthub/admin/orders', follow_redirects=False)
+                print(f'SPORTHUB_V9_CLUB_SELFTEST club={_club.id} dashboard={_dash.status_code} products={_prod.status_code} orders={_ord.status_code}', flush=True)
 except Exception as _exc:
-    print(f'SPORTHUB_V9_SELFTEST_ERROR {type(_exc).__name__}', flush=True)
+    print(f'SPORTHUB_V9_SELFTEST_ERROR {type(_exc).__name__}: {_exc}', flush=True)
