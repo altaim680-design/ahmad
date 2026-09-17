@@ -4,6 +4,7 @@
 Adds product image upload/editing without using the web service filesystem.
 The migration works with both SQLite and PostgreSQL deployments.
 """
+import re
 from flask import request, redirect, flash, abort, jsonify, render_template_string
 from sqlalchemy import text
 
@@ -95,8 +96,7 @@ with app.app_context():
     _migrate_product_images()
 
 
-@app.get('/sporthub/product/<int:pid>/image')
-def sporthub_product_image_v10(pid):
+def _product_image_response(pid):
     row = db.session.execute(
         text("SELECT image_data, COALESCE(image_mime,'') FROM sporthub_product WHERE id=:pid"),
         {'pid': pid},
@@ -107,6 +107,19 @@ def sporthub_product_image_v10(pid):
     resp.headers['Cache-Control'] = 'public, max-age=86400'
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
+
+
+def _product_image_dispatch_v10():
+    if request.method != 'GET':
+        return None
+    m = re.fullmatch(r'/sporthub/product/(\d+)/image/?', request.path)
+    if not m:
+        return None
+    return _product_image_response(int(m.group(1)))
+
+# V8/V9 perform startup test requests during import, so registering a normal
+# Flask route here would be rejected. Insert directly into before_request chain.
+app.before_request_funcs.setdefault(None, []).insert(0, _product_image_dispatch_v10)
 
 
 def api_products_v10():
