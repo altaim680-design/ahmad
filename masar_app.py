@@ -5,7 +5,7 @@ fraud controls, legal terms, monitoring and independent security review.
 import os, re, hmac, secrets, hashlib, html, json, base64, threading, urllib.request, urllib.error
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from contextlib import contextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -31,6 +31,10 @@ if not 0 <= TRADER_BPS <= 3000 or not 0 <= CARRIER_BPS <= 3000: raise RuntimeErr
 PAYMENT_RECEIVER = os.environ.get("SHAMCASH_RECEIVER", "").strip()
 PAYMENTS_ENABLED = os.environ.get("PAYMENTS_ENABLED", "0") == "1" and bool(PAYMENT_RECEIVER)
 SETUP_TOKEN = os.environ.get("ADMIN_SETUP_TOKEN", "")
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID","").strip()
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN","").strip()
+TWILIO_VERIFY_SERVICE_SID = os.environ.get("TWILIO_VERIFY_SERVICE_SID","").strip()
+WHATSAPP_OTP_ENABLED = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_VERIFY_SERVICE_SID)
 SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_urlsafe(48))
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"check_same_thread":False} if DB_IS_PREVIEW else {})
 Session = sessionmaker(engine, expire_on_commit=False)
@@ -41,6 +45,7 @@ class User(Base):
     id=Column(Integer,primary_key=True)
     name=Column(String(90),nullable=False)
     email=Column(String(180),unique=True,nullable=False)
+    phone=Column(String(30),nullable=True)
     hash=Column(String(400),nullable=False)
     role=Column(String(20),nullable=False)
     company=Column(String(120),default="")
@@ -112,6 +117,18 @@ class Photo(Base):
     data=Column(LargeBinary,nullable=False)
     created=Column(String(40),default=utc)
 Base.metadata.create_all(engine)
+# Lightweight compatibility migration for the existing SQLite cache.
+# Supabase persistence stores the serialized model state, while the local cache
+# still needs the new phone column for ORM reads/writes.
+try:
+    with engine.begin() as conn:
+        cols=[row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()] if DATABASE_URL.startswith("sqlite:") else []
+        if DATABASE_URL.startswith("sqlite:") and "phone" not in cols:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN phone VARCHAR(30)")
+        if DATABASE_URL.startswith("sqlite:"):
+            conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_phone ON users(phone)")
+except Exception as exc:
+    print("Masar phone schema migration warning:",repr(exc))
 
 SYNC_MODELS=(User,Listing,Offer,Booking,PaymentClaim,Audit,Photo)
 DELETE_MODELS=(PaymentClaim,Booking,Offer,Photo,Audit,Listing,User)
@@ -264,6 +281,40 @@ def session():
         db.rollback()
         raise
     finally: db.close()
+def normalize_phone(v):
+    raw=str(v or "").strip().replace(" ","").replace("-","").replace("(","").replace(")","")
+    if raw.startswith("00"): raw="+"+raw[2:]
+    if not re.fullmatch(r"\+[1-9][0-9]{7,14}",raw):
+        return None
+    return raw
+
+def twilio_request(path,params):
+    if not WHATSAPP_OTP_ENABLED:
+        raise RuntimeError("whatsapp_otp_not_configured")
+    data=urlencode(params).encode("utf-8")
+    token=base64.b64encode((TWILIO_ACCOUNT_SID+":"+TWILIO_AUTH_TOKEN).encode()).decode()
+    req=urllib.request.Request(
+        "https://verify.twilio.com/v2/Services/"+quote(TWILIO_VERIFY_SERVICE_SID,safe="")+"/"+path,
+        data=data,
+        headers={"Authorization":"Basic "+token,"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req,timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body=exc.read().decode("utf-8","replace")[:500]
+        print("Twilio Verify error:",exc.code,body)
+        raise
+
+def send_whatsapp_otp(phone):
+    result=twilio_request("Verifications",{"To":phone,"Channel":"whatsapp"})
+    return str(result.get("status","")) in ("pending","approved")
+
+def check_whatsapp_otp(phone,code):
+    result=twilio_request("VerificationCheck",{"To":phone,"Code":str(code)})
+    return str(result.get("status",""))=="approved"
+
 def password_hash(v):
     salt=secrets.token_bytes(16)
     return salt.hex()+":"+hashlib.pbkdf2_hmac("sha256",v.encode(),salt,390000).hex()
@@ -299,7 +350,7 @@ def page(req,title,body,status=200):
     with session() as db:
         u=current(req,db)
         user={"id":u.id,"name":u.name,"role":u.role} if u else None
-    markup=template(LAYOUT,site=SITE,title=title,body=body,user=user,csrf=csrf(req),preview=DB_IS_PREVIEW,receiver=PAYMENT_RECEIVER,enabled=PAYMENTS_ENABLED)
+    markup=template(LAYOUT,site=SITE,title=title,body=body,user=user,csrf=csrf(req),preview=DB_IS_PREVIEW,receiver=PAYMENT_RECEIVER,enabled=PAYMENTS_ENABLED,whatsapp_otp=WHATSAPP_OTP_ENABLED)
     return HTMLResponse(markup,status_code=status,headers={"Cache-Control":"no-store"})
 STYLE="""
 :root{--ink:#142c3a;--teal:#087d71;--pale:#e9f8f4;--muted:#637783;--edge:#dce9eb}
@@ -339,31 +390,81 @@ def index(req:Request,q:str=""):
     return page(req,"الرئيسية",body)
 @app.get("/register",response_class=HTMLResponse)
 def reg_page(req:Request):
-    body=template("""<section class="panel form"><h2>إنشاء حساب</h2><form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><label>الاسم</label><input class="input" name="name" required maxlength="90"><label>البريد الإلكتروني</label><input class="input" name="email" type="email" required maxlength="180"><label>اسم الشركة (اختياري)</label><input class="input" name="company" maxlength="120"><label>نوع الحساب</label><select name="role" class="input"><option value="trader">تاجر / صاحب حمولة</option><option value="carrier">سائق / شركة نقل</option></select><label>كلمة المرور (12 حرفاً على الأقل)</label><input class="input" name="password" type="password" required minlength="12" maxlength="200"><p class="muted">التسجيل لا يعني التحقق من الهوية. استخدم بيانات تجريبية فقط.</p><button class="btn">إنشاء الحساب</button></form></section>""",csrf=csrf(req))
+    configured=WHATSAPP_OTP_ENABLED
+    body=template("""<section class="panel form"><h2>إنشاء حساب برقم الهاتف</h2><p class="muted">أدخل رقم واتساب بصيغة دولية، مثال: +9639XXXXXXXX أو +905XXXXXXXXX. سنرسل رمز تحقق إلى واتساب قبل إنشاء الحساب.</p>{% if not configured %}<div class="notice" style="border-radius:10px;margin:12px 0">إرسال واتساب غير مفعّل بعد على الخادم. يلزم ربط حساب WhatsApp Business عبر Twilio Verify.</div>{% endif %}<form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><label>الاسم</label><input class="input" name="name" required maxlength="90"><label>رقم واتساب</label><input class="input" name="phone" inputmode="tel" autocomplete="tel" placeholder="+9639XXXXXXXX" required maxlength="20"><label>اسم الشركة (اختياري)</label><input class="input" name="company" maxlength="120"><label>نوع الحساب</label><select name="role" class="input"><option value="trader">تاجر / صاحب حمولة</option><option value="carrier">سائق / شركة نقل</option></select><label>كلمة المرور (12 حرفاً على الأقل)</label><input class="input" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="200"><button class="btn" {% if not configured %}disabled style="opacity:.55;cursor:not-allowed"{% endif %}>إرسال رمز التحقق على واتساب</button></form></section>""",csrf=csrf(req),configured=configured)
     return page(req,"تسجيل",body)
+
 @app.post("/register")
 async def register(req:Request):
     form=await req.form()
     if bad:=require_form(req,form):return bad
-    name=str(form.get("name","")).strip()[:90];email=str(form.get("email","")).strip().lower()[:180]
-    role=str(form.get("role",""));pwd=str(form.get("password",""));company=str(form.get("company","")).strip()[:120]
-    if len(name)<2 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email) or role not in ("trader","carrier") or not 12<=len(pwd)<=200:return error(req,"بيانات التسجيل غير صالحة.")
+    if not WHATSAPP_OTP_ENABLED:return error(req,"إرسال رمز واتساب غير مفعّل بعد على الخادم.",503)
+    name=str(form.get("name","")).strip()[:90]
+    phone=normalize_phone(form.get("phone"))
+    role=str(form.get("role",""))
+    pwd=str(form.get("password",""))
+    company=str(form.get("company","")).strip()[:120]
+    if len(name)<2 or not phone or role not in ("trader","carrier") or not 12<=len(pwd)<=200:
+        return error(req,"تحقق من الاسم ورقم الهاتف وكلمة المرور.")
+    with session() as db:
+        if db.scalar(select(User).where(User.phone==phone)):
+            return error(req,"رقم الهاتف مسجل مسبقاً.")
+    try:
+        if not send_whatsapp_otp(phone):
+            return error(req,"تعذر إرسال رمز التحقق على واتساب. حاول مرة أخرى.",502)
+    except Exception:
+        return error(req,"تعذر الاتصال بخدمة واتساب لإرسال رمز التحقق.",502)
+    req.session["pending_registration"]={
+        "name":name,
+        "phone":phone,
+        "company":company,
+        "role":role,
+        "password_hash":password_hash(pwd),
+        "issued_at":utc(),
+    }
+    return go("/register/verify")
+
+@app.get("/register/verify",response_class=HTMLResponse)
+def register_verify_page(req:Request):
+    pending=req.session.get("pending_registration")
+    if not isinstance(pending,dict) or not pending.get("phone"):return go("/register")
+    body=template("""<section class="panel form"><h2>تأكيد رقم واتساب</h2><p>أرسلنا رمز تحقق إلى <b>{{phone}}</b>.</p><form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><label>رمز التحقق</label><input class="input" name="code" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="10" required autofocus><div class="actions"><button class="btn">تأكيد وإنشاء الحساب</button><a class="btn soft" href="/register">تغيير الرقم</a></div></form></section>""",phone=pending["phone"],csrf=csrf(req))
+    return page(req,"تأكيد واتساب",body)
+
+@app.post("/register/verify")
+async def register_verify(req:Request):
+    form=await req.form()
+    if bad:=require_form(req,form):return bad
+    pending=req.session.get("pending_registration")
+    if not isinstance(pending,dict):return go("/register")
+    phone=normalize_phone(pending.get("phone"))
+    code=str(form.get("code","")).strip()
+    if not phone or not re.fullmatch(r"[0-9]{4,10}",code):return error(req,"رمز التحقق غير صالح.")
+    try:
+        approved=check_whatsapp_otp(phone,code)
+    except Exception:
+        return error(req,"تعذر التحقق من الرمز عبر واتساب. حاول مرة أخرى.",502)
+    if not approved:return error(req,"رمز التحقق غير صحيح أو انتهت صلاحيته.",401)
+    email=re.sub(r"[^0-9]","",phone)+"@phone.masar.invalid"
     try:
         with session() as db:
-            u=User(name=name,email=email,hash=password_hash(pwd),role=role,company=company)
-            db.add(u);db.flush();uid=u.id
-    except IntegrityError:return error(req,"البريد مسجل مسبقاً.")
+            if db.scalar(select(User).where(User.phone==phone)):return error(req,"رقم الهاتف مسجل مسبقاً.")
+            u=User(name=str(pending.get("name",""))[:90],email=email,phone=phone,hash=str(pending.get("password_hash","")),role=str(pending.get("role","")),company=str(pending.get("company",""))[:120])
+            db.add(u);db.flush();uid=u.id;log(db,uid,"user",uid,"phone_verified_registration")
+    except IntegrityError:return error(req,"تعذر إنشاء الحساب لأن الرقم مستخدم مسبقاً.")
     req.session.clear();req.session["uid"]=uid;return go("/dashboard")
 @app.get("/login",response_class=HTMLResponse)
 def login_page(req:Request):
-    return page(req,"دخول",template("""<section class="panel form"><h2>تسجيل الدخول</h2><form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><label>البريد الإلكتروني</label><input class="input" name="email" type="email" required><label>كلمة المرور</label><input class="input" name="password" type="password" required><div class="actions"><button class="btn">دخول</button><a class="btn soft" href="/register">حساب جديد</a></div></form></section>""",csrf=csrf(req)))
+    return page(req,"دخول",template("""<section class="panel form"><h2>تسجيل الدخول</h2><form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><label>رقم الهاتف</label><input class="input" name="phone" inputmode="tel" autocomplete="tel" placeholder="+9639XXXXXXXX" required><label>كلمة المرور</label><input class="input" name="password" type="password" autocomplete="current-password" required><div class="actions"><button class="btn">دخول</button><a class="btn soft" href="/register">حساب جديد</a></div></form></section>""",csrf=csrf(req)))
 @app.post("/login")
 async def login(req:Request):
     form=await req.form()
     if bad:=require_form(req,form):return bad
+    phone=normalize_phone(form.get("phone"))
+    if not phone:return error(req,"رقم الهاتف غير صالح.",400)
     with session() as db:
-        u=db.scalar(select(User).where(User.email==str(form.get("email","")).strip().lower()))
-        if not u or not password_ok(str(form.get("password","")),u.hash):return error(req,"البريد أو كلمة المرور غير صحيحين.",401)
+        u=db.scalar(select(User).where(User.phone==phone))
+        if not u or not password_ok(str(form.get("password","")),u.hash):return error(req,"رقم الهاتف أو كلمة المرور غير صحيحين.",401)
         uid=u.id
     req.session.clear();req.session["uid"]=uid;return go("/dashboard")
 @app.post("/logout")
