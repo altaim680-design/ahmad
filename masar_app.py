@@ -120,7 +120,6 @@ _SYNC_LOCK=threading.RLock()
 def _remote_headers(extra=None):
     h={
         "apikey":SUPABASE_ANON_KEY,
-        "Authorization":"Bearer "+SUPABASE_ANON_KEY,
         "x-masar-secret":SUPABASE_SYNC_SECRET,
         "Content-Type":"application/json",
         "Accept":"application/json",
