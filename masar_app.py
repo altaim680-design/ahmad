@@ -8,10 +8,10 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import quote
 from contextlib import contextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, UniqueConstraint, select, func
+from sqlalchemy import create_engine, Column, Integer, String, Text, LargeBinary, ForeignKey, UniqueConstraint, select, func
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.exc import IntegrityError
 from jinja2 import Environment, DictLoader, select_autoescape
@@ -99,6 +99,14 @@ class Audit(Base):
     entity_id=Column(Integer,nullable=False)
     action=Column(String(60),nullable=False)
     created=Column(String(40),default=utc)
+class Photo(Base):
+    __tablename__="listing_photos"
+    id=Column(Integer,primary_key=True)
+    listing_id=Column(Integer,ForeignKey("listings.id"),nullable=False,index=True)
+    owner_id=Column(Integer,ForeignKey("users.id"),nullable=False)
+    mime=Column(String(30),nullable=False)
+    data=Column(LargeBinary,nullable=False)
+    created=Column(String(40),default=utc)
 Base.metadata.create_all(engine)
 app=FastAPI(title=SITE)
 app.add_middleware(SessionMiddleware,secret_key=SECRET_KEY,same_site="lax",https_only=os.environ.get("SECURE_COOKIES","0")=="1",max_age=86400)
@@ -166,6 +174,7 @@ main{min-height:68vh;padding:35px 0 65px}.panel,.card{background:white;border:1p
 .flex{display:flex;align-items:center;justify-content:space-between;gap:13px;flex-wrap:wrap}
 .tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:630px}th,td{text-align:right;border-bottom:1px solid var(--edge);padding:12px 9px;font-size:13px}th{background:#eff6f6}
 footer{background:#112b39;color:#c0d5d6;padding:25px 0;font-size:12px}
+.listing-photo,.photo-placeholder{display:grid;place-items:center;width:100%;height:160px;border-radius:13px;object-fit:cover;margin-bottom:14px;background:linear-gradient(125deg,#074e56,#16867c);color:white}.photo-placeholder span{font-size:66px;filter:drop-shadow(0 6px 12px #062d3c66)}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:16px 0}.gallery img{width:100%;height:165px;object-fit:cover;border-radius:12px;border:1px solid var(--edge)}.card{transition:transform .18s,box-shadow .18s}.card:hover{transform:translateY(-3px);box-shadow:0 12px 30px #133e4818}.hero{background:radial-gradient(circle at 15% 5%,#23766c 0,transparent 36%),linear-gradient(120deg,#092330,#15464e)}.hero h1{letter-spacing:-1px}.price{letter-spacing:-.3px}input:focus,select:focus,textarea:focus{outline:2px solid #11877880;outline-offset:2px}
 @media(max-width:780px){.cards{grid-template-columns:1fr}.row{grid-template-columns:1fr}.navlinks{font-size:12px}.panel,.card{padding:16px}main{padding-top:18px}}
 """
 LAYOUT="""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}} | {{site}}</title><style>"""+STYLE+"""</style></head><body>
@@ -181,8 +190,8 @@ def action(url,token,label,extra="",kind=""):
 def index(req:Request,q:str=""):
     with session() as db:
         rows=db.scalars(select(Listing).where(Listing.status=="open").order_by(Listing.id.desc()).limit(100)).all()
-        rows=[{"id":x.id,"title":x.title,"origin":x.origin_city+"، "+x.origin_country,"dest":x.dest_city+"، "+x.dest_country,"kg":x.weight_kg,"description":x.description} for x in rows if q.casefold() in (x.title+" "+x.origin_city+" "+x.dest_city).casefold()]
-    body=template("""<header class="hero" style="border-radius:20px;padding:35px;margin-bottom:23px"><span class="tag">منصة الشحن والتجارة الدولية</span><h1>من الحمولة إلى التسليم<br>في مكان واحد 🚛</h1><p>سوق حمولات فعلي لتجربة حسابات التجار والناقلين والحجوزات وعرض رسوم المنصة بوضوح على الطرفين.</p><div class="actions"><a class="btn white" href="/new">انشر حمولة</a><a class="btn soft" href="/register">انضم إلى المنصة</a></div></header><section class="panel"><h2>ابحث عن حمولة</h2><form method="get" class="flex"><input class="input" name="q" value="{{q}}" placeholder="بلد، مدينة، أو نوع البضاعة" style="flex:1;min-width:180px"><button class="btn">بحث</button></form></section><h2>الحمولات المنشورة</h2><div class="cards">{% for l in listings %}<article class="card"><span class="tag">حمولة #{{l.id}}</span><h3>{{l.title}}</h3><p>📍 {{l.origin}} ← {{l.dest}}</p><p class="muted">الوزن: {{l.kg}} كغ</p><p class="muted">{{l.description[:100]}}</p><a class="btn soft" href="/listing/{{l.id}}">التفاصيل والعروض</a></article>{% else %}<article class="card"><h3>لا توجد حمولات منشورة بعد</h3><p class="muted">يمكن للتجار إضافة الحمولة الأولى.</p></article>{% endfor %}</div>""",q=q[:80],listings=rows)
+        rows=[{"id":x.id,"title":x.title,"origin":x.origin_city+"، "+x.origin_country,"dest":x.dest_city+"، "+x.dest_country,"kg":x.weight_kg,"description":x.description,"photo_id":db.scalar(select(Photo.id).where(Photo.listing_id==x.id).order_by(Photo.id.desc()).limit(1))} for x in rows if q.casefold() in (x.title+" "+x.origin_city+" "+x.dest_city).casefold()]
+    body=template("""<header class="hero" style="border-radius:20px;padding:35px;margin-bottom:23px"><span class="tag">منصة الشحن والتجارة الدولية</span><h1>من الحمولة إلى التسليم<br>في مكان واحد 🚛</h1><p>سوق حمولات فعلي لتجربة حسابات التجار والناقلين والحجوزات وعرض رسوم المنصة بوضوح على الطرفين.</p><div class="actions"><a class="btn white" href="/new">انشر حمولة</a><a class="btn soft" href="/register">انضم إلى المنصة</a></div></header><section class="panel"><h2>ابحث عن حمولة</h2><form method="get" class="flex"><input class="input" name="q" value="{{q}}" placeholder="بلد، مدينة، أو نوع البضاعة" style="flex:1;min-width:180px"><button class="btn">بحث</button></form></section><h2>الحمولات المنشورة</h2><div class="cards">{% for l in listings %}<article class="card">{% if l.photo_id %}<a href="/listing/{{l.id}}"><img class="listing-photo" loading="lazy" alt="صورة للحمولة" src="/photo/{{l.photo_id}}"></a>{% else %}<a href="/listing/{{l.id}}" class="photo-placeholder" aria-label="تفاصيل الحمولة"><span>🚛</span></a>{% endif %}<span class="tag">حمولة #{{l.id}}</span><h3>{{l.title}}</h3><p>📍 {{l.origin}} ← {{l.dest}}</p><p class="muted">الوزن: {{l.kg}} كغ</p><p class="muted">{{l.description[:100]}}</p><a class="btn soft" href="/listing/{{l.id}}">التفاصيل والعروض</a></article>{% else %}<article class="card"><h3>لا توجد حمولات منشورة بعد</h3><p class="muted">يمكن للتجار إضافة الحمولة الأولى.</p></article>{% endfor %}</div>""",q=q[:80],listings=rows)
     return page(req,"الرئيسية",body)
 @app.get("/register",response_class=HTMLResponse)
 def reg_page(req:Request):
@@ -255,12 +264,14 @@ def listing_page(req:Request,ident:int):
         own=bool(u and u.id==l.trader_id);carrier=bool(u and u.role=="carrier" and u.id!=l.trader_id)
         booked=db.scalar(select(Booking).where(Booking.listing_id==ident))
         booking_id=booked.id if booked else None
+        photos=[p.id for p in db.scalars(select(Photo).where(Photo.listing_id==ident).order_by(Photo.id.desc())).all()]
         offered=bool(u and any(o.carrier_id==u.id for o in items))
-    body=template("""<section class="panel"><span class="tag">حمولة #{{l.id}} | {{l.status}}</span><h1>{{l.title}}</h1><p>📍 {{l.from_}} ← {{l.to}}</p><p>⚖️ {{l.weight}} كغ</p><p>{{l.description}}</p></section>
+    body=template("""<section class="panel"><span class="tag">حمولة #{{l.id}} | {{l.status}}</span><h1>{{l.title}}</h1>{% if photos %}<div class="gallery">{% for pid in photos %}<a href="/photo/{{pid}}" target="_blank" rel="noopener"><img src="/photo/{{pid}}" loading="lazy" alt="صورة للحمولة"></a>{% endfor %}</div>{% endif %}<p>📍 {{l.from_}} ← {{l.to}}</p><p>⚖️ {{l.weight}} كغ</p><p>{{l.description}}</p></section>
+{% if own and photos|length < 5 %}<section class="panel form"><h2>📸 إضافة صور الحمولة</h2><p class="muted">ارفع صورة حقيقية توضح الحمولة دون وجوه أشخاص أو وثائق شخصية. يُسمح حتى 5 صور، بصيغة JPG أو PNG أو WebP وبحجم لا يتجاوز 1 ميغابايت للصورة.</p><form method="post" enctype="multipart/form-data" action="/listing/{{l.id}}/photo"><input type="hidden" name="csrf" value="{{csrf}}"><input class="input" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><div class="actions"><button class="btn">إضافة الصورة</button></div></form></section>{% endif %}
 {% if booked %}<section class="panel"><p>تم اختيار الناقل لهذه الحمولة.</p><a class="btn" href="/booking/{{booked}}">تفاصيل الحجز</a></section>{% endif %}
 {% if carrier and l.status=="open" and not offered %}<section class="panel form"><h2>تقديم عرض نقل</h2><form method="post" action="/listing/{{l.id}}/offer"><input type="hidden" name="csrf" value="{{csrf}}"><label>أجرة النقل بالدولار USD</label><input class="input" type="number" name="price" step="0.01" min="1" max="100000000" required><label>تفاصيل العرض</label><textarea class="input" name="note" maxlength="500"></textarea><p class="muted">عمولة الناقل {{carrier_pct}}% تُخصم من الأجرة عند إتمام الحجز. التاجر يدفع أجرة النقل إضافة إلى عمولة {{trader_pct}}%. قد توجد رسوم خارج المنصة.</p><button class="btn">إرسال عرض السعر</button></form></section>{% endif %}
 {% if offered %}<p class="tag">قدمت عرضاً بالفعل على هذه الحمولة.</p>{% endif %}
-{% if own %}<section class="panel"><h2>عروض الناقلين</h2>{% for o in offers %}<div class="line flex"><div><b>{{o.carrier}}</b> — <span class="price">{{o.price}} USD</span><p class="muted">{{o.note}} | الحالة: {{o.status}}</p></div>{% if l.status=="open" and o.status=="pending" %}<form method="post" action="/offer/{{o.id}}/accept"><input type="hidden" name="csrf" value="{{csrf}}"><button class="btn">قبول العرض والحجز</button></form>{% endif %}</div>{% else %}<p class="muted">لم تصل عروض بعد.</p>{% endfor %}</section>{% endif %}""",l=data,offers=offers,booked=booking_id,own=own,carrier=carrier,offered=offered,csrf=csrf(req),carrier_pct=CARRIER_BPS/100,trader_pct=TRADER_BPS/100)
+{% if own %}<section class="panel"><h2>عروض الناقلين</h2>{% for o in offers %}<div class="line flex"><div><b>{{o.carrier}}</b> — <span class="price">{{o.price}} USD</span><p class="muted">{{o.note}} | الحالة: {{o.status}}</p></div>{% if l.status=="open" and o.status=="pending" %}<form method="post" action="/offer/{{o.id}}/accept"><input type="hidden" name="csrf" value="{{csrf}}"><button class="btn">قبول العرض والحجز</button></form>{% endif %}</div>{% else %}<p class="muted">لم تصل عروض بعد.</p>{% endfor %}</section>{% endif %}""",l=data,offers=offers,booked=booking_id,photos=photos,own=own,carrier=carrier,offered=offered,csrf=csrf(req),carrier_pct=CARRIER_BPS/100,trader_pct=TRADER_BPS/100)
     return page(req,"تفاصيل الحمولة",body)
 @app.post("/listing/{ident}/offer")
 async def offer_submit(req:Request,ident:int):
@@ -411,6 +422,36 @@ async def review(req:Request,ident:int,decision:str):
         if decision=="verify":b.status="confirmed"
         log(db,u.id,"payment_claim",claim.id,"manually_"+claim.status)
     return go("/admin")
+@app.get("/photo/{ident}")
+def serve_photo(ident:int):
+    with session() as db:
+        photo=db.get(Photo,ident)
+        if not photo:return Response(status_code=404)
+        return Response(bytes(photo.data),media_type=photo.mime,headers={"Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
+
+@app.post("/listing/{ident}/photo")
+async def upload_photo(req:Request,ident:int):
+    try:f=await req.form(max_part_size=1400000)
+    except Exception:return error(req,"الملف أكبر من الحجم المسموح أو غير صالح.",413)
+    if bad:=require_form(req,f):return bad
+    uploaded=f.get("photo")
+    if not hasattr(uploaded,"read"):return error(req,"اختر صورة صالحة.")
+    try:data=await uploaded.read(1000002)
+    finally:await uploaded.close()
+    if not data or len(data)>1000000:return error(req,"الحجم الأقصى للصورة هو 1 ميغابايت.",413)
+    if data.startswith(bytes.fromhex("ffd8ff")) and data.endswith(bytes.fromhex("ffd9")):mime="image/jpeg"
+    elif data.startswith(bytes.fromhex("89504e470d0a1a0a")) and b"IEND" in data[-24:]:mime="image/png"
+    elif data.startswith(b"RIFF") and data[8:12]==b"WEBP":mime="image/webp"
+    else:return error(req,"يُسمح فقط بصور JPG وPNG وWebP الصالحة.")
+    with session() as db:
+        u=current(req,db);l=db.get(Listing,ident)
+        if not u:return login_redirect()
+        if not l or l.trader_id!=u.id or u.role!="trader":return error(req,"إضافة الصور متاحة لصاحب الحمولة فقط.",403)
+        if (db.scalar(select(func.count()).select_from(Photo).where(Photo.listing_id==ident)) or 0)>=5:return error(req,"الحد الأقصى 5 صور لكل حمولة.")
+        p=Photo(listing_id=l.id,owner_id=u.id,mime=mime,data=data)
+        db.add(p);db.flush();log(db,u.id,"photo",p.id,"uploaded")
+    return go(f"/listing/{ident}")
+
 @app.get("/health")
 def health():
     with session() as db:db.scalar(select(func.count()).select_from(User))
