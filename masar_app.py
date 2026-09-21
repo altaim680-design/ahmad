@@ -2,7 +2,7 @@
 For production: configure persistent PostgreSQL, mail verification, licensed payment provider,
 fraud controls, legal terms, monitoring and independent security review.
 """
-import os, re, hmac, secrets, hashlib, html
+import os, re, hmac, secrets, hashlib, html, json, base64, threading, urllib.request, urllib.error
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import quote
@@ -20,7 +20,11 @@ SITE = "مسار للنقل الدولي"
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////tmp/masar_marketplace_preview.db")
 if DATABASE_URL.startswith("postgres://"): DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 if DATABASE_URL.startswith("postgresql://"): DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
-DB_IS_PREVIEW = DATABASE_URL.startswith("sqlite:")
+SUPABASE_URL = os.environ.get("SUPABASE_URL","").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY","")
+SUPABASE_SYNC_SECRET = os.environ.get("SUPABASE_SYNC_SECRET","")
+REMOTE_STATE_ENABLED = bool(SUPABASE_URL and SUPABASE_ANON_KEY and SUPABASE_SYNC_SECRET)
+DB_IS_PREVIEW = DATABASE_URL.startswith("sqlite:") and not REMOTE_STATE_ENABLED
 TRADER_BPS = int(os.environ.get("TRADER_FEE_BPS", "200"))
 CARRIER_BPS = int(os.environ.get("CARRIER_FEE_BPS", "300"))
 if not 0 <= TRADER_BPS <= 3000 or not 0 <= CARRIER_BPS <= 3000: raise RuntimeError("Invalid fee percentage")
@@ -108,8 +112,149 @@ class Photo(Base):
     data=Column(LargeBinary,nullable=False)
     created=Column(String(40),default=utc)
 Base.metadata.create_all(engine)
+
+SYNC_MODELS=(User,Listing,Offer,Booking,PaymentClaim,Audit,Photo)
+DELETE_MODELS=(PaymentClaim,Booking,Offer,Photo,Audit,Listing,User)
+_SYNC_LOCK=threading.RLock()
+
+def _remote_headers(extra=None):
+    h={
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":"Bearer "+SUPABASE_ANON_KEY,
+        "x-masar-secret":SUPABASE_SYNC_SECRET,
+        "Content-Type":"application/json",
+        "Accept":"application/json",
+    }
+    if extra:h.update(extra)
+    return h
+
+def _remote_request(method,path,payload=None,prefer=None):
+    if not REMOTE_STATE_ENABLED:return None
+    body=None if payload is None else json.dumps(payload,separators=(",",":")).encode("utf-8")
+    headers=_remote_headers({"Prefer":prefer} if prefer else None)
+    req=urllib.request.Request(SUPABASE_URL+path,data=body,headers=headers,method=method)
+    with urllib.request.urlopen(req,timeout=20) as resp:
+        raw=resp.read()
+        if not raw:return None
+        return json.loads(raw.decode("utf-8"))
+
+def _encode_value(v):
+    if isinstance(v,(bytes,bytearray,memoryview)):
+        return {"__bytes__":base64.b64encode(bytes(v)).decode("ascii")}
+    return v
+
+def _decode_value(v):
+    if isinstance(v,dict) and "__bytes__" in v:
+        return base64.b64decode(v["__bytes__"])
+    return v
+
+def _snapshot_payload():
+    db=Session()
+    try:
+        out={}
+        for cls in SYNC_MODELS:
+            rows=[]
+            for obj in db.scalars(select(cls).order_by(cls.id.asc())).all():
+                row={}
+                for col in cls.__table__.columns:
+                    value=getattr(obj,col.name)
+                    if cls is Photo and col.name=="data":
+                        value=b""
+                    row[col.name]=_encode_value(value)
+                rows.append(row)
+            out[cls.__tablename__]=rows
+        return out
+    finally:
+        db.close()
+
+def _restore_payload(payload):
+    if not isinstance(payload,dict) or not any(isinstance(v,list) and v for v in payload.values()):
+        return False
+    db=Session()
+    try:
+        for cls in DELETE_MODELS:
+            db.query(cls).delete(synchronize_session=False)
+        for cls in SYNC_MODELS:
+            for row in payload.get(cls.__tablename__,[]) or []:
+                vals={k:_decode_value(v) for k,v in row.items()}
+                if cls is Photo: vals["data"]=b""
+                db.add(cls(**vals))
+        db.commit()
+        return True
+    except:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def restore_from_supabase():
+    if not REMOTE_STATE_ENABLED:return False
+    with _SYNC_LOCK:
+        rows=_remote_request("GET","/rest/v1/masar_state?id=eq.main&select=payload")
+        if rows and isinstance(rows,list):
+            return _restore_payload(rows[0].get("payload"))
+        return False
+
+def sync_to_supabase():
+    if not REMOTE_STATE_ENABLED:return False
+    with _SYNC_LOCK:
+        payload=_snapshot_payload()
+        _remote_request(
+            "PATCH",
+            "/rest/v1/masar_state?id=eq.main",
+            {"payload":payload,"updated_at":utc()},
+            "return=minimal"
+        )
+        return True
+
+def persist_photo_remote(photo_id,listing_id,owner_id,mime,data):
+    if not REMOTE_STATE_ENABLED:return False
+    item={
+        "id":int(photo_id),
+        "listing_id":int(listing_id),
+        "owner_id":int(owner_id),
+        "mime":mime,
+        "data_base64":base64.b64encode(bytes(data)).decode("ascii"),
+        "updated_at":utc(),
+    }
+    _remote_request(
+        "POST",
+        "/rest/v1/masar_photos",
+        item,
+        "resolution=merge-duplicates,return=minimal"
+    )
+    return True
+
+def fetch_photo_remote(photo_id):
+    if not REMOTE_STATE_ENABLED:return None
+    rows=_remote_request("GET",f"/rest/v1/masar_photos?id=eq.{int(photo_id)}&select=mime,data_base64")
+    if not rows:return None
+    item=rows[0]
+    return item.get("mime"),base64.b64decode(item.get("data_base64",""))
+
+try:
+    if REMOTE_STATE_ENABLED:
+        restored=restore_from_supabase()
+        if restored:
+            print("Masar: restored persistent state from Supabase")
+        else:
+            sync_to_supabase()
+            print("Masar: initialized persistent Supabase state")
+except Exception as exc:
+    print("Masar persistence startup warning:",repr(exc))
+
 app=FastAPI(title=SITE)
 app.add_middleware(SessionMiddleware,secret_key=SECRET_KEY,same_site="lax",https_only=os.environ.get("SECURE_COOKIES","0")=="1",max_age=86400)
+
+@app.middleware("http")
+async def persist_mutations(request,call_next):
+    response=await call_next(request)
+    if REMOTE_STATE_ENABLED and request.method in ("POST","PUT","PATCH","DELETE") and response.status_code<400:
+        try:
+            sync_to_supabase()
+        except Exception as exc:
+            print("Masar persistence sync warning:",repr(exc))
+    return response
 @contextmanager
 def session():
     db=Session()
@@ -427,7 +572,23 @@ def serve_photo(ident:int):
     with session() as db:
         photo=db.get(Photo,ident)
         if not photo:return Response(status_code=404)
-        return Response(bytes(photo.data),media_type=photo.mime,headers={"Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
+        local_data=bytes(photo.data or b"")
+        mime=photo.mime
+    if local_data:
+        return Response(local_data,media_type=mime,headers={"Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
+    try:
+        remote=fetch_photo_remote(ident)
+    except Exception as exc:
+        print("Masar remote photo warning:",repr(exc));remote=None
+    if not remote:return Response(status_code=404)
+    mime,data=remote
+    try:
+        with session() as db:
+            p=db.get(Photo,ident)
+            if p:p.data=data
+    except Exception:
+        pass
+    return Response(data,media_type=mime,headers={"Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
 
 @app.post("/listing/{ident}/photo")
 async def upload_photo(req:Request,ident:int):
@@ -450,9 +611,19 @@ async def upload_photo(req:Request,ident:int):
         if (db.scalar(select(func.count()).select_from(Photo).where(Photo.listing_id==ident)) or 0)>=5:return error(req,"الحد الأقصى 5 صور لكل حمولة.")
         p=Photo(listing_id=l.id,owner_id=u.id,mime=mime,data=data)
         db.add(p);db.flush();log(db,u.id,"photo",p.id,"uploaded")
+        photo_id=p.id;owner_id=u.id;listing_id=l.id
+    if REMOTE_STATE_ENABLED:
+        try:
+            persist_photo_remote(photo_id,listing_id,owner_id,mime,data)
+        except Exception as exc:
+            print("Masar photo persistence warning:",repr(exc))
+            with session() as db:
+                doomed=db.get(Photo,photo_id)
+                if doomed:db.delete(doomed)
+            return error(req,"تعذر حفظ الصورة في التخزين الدائم. حاول مرة أخرى.",503)
     return go(f"/listing/{ident}")
 
 @app.get("/health")
 def health():
     with session() as db:db.scalar(select(func.count()).select_from(User))
-    return {"status":"ok","database":"preview_ephemeral" if DB_IS_PREVIEW else "external"}
+    return {"status":"ok","database":"supabase_persistent" if REMOTE_STATE_ENABLED else ("preview_ephemeral" if DB_IS_PREVIEW else "external")}
