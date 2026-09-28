@@ -6,7 +6,7 @@ const sha=async(s:string)=>Array.from(new Uint8Array(await crypto.subtle.digest(
 const response=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,'Content-Type':'application/json'}});
 const str=(v:unknown,max=200)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw new Error('تحقق من الحقول المطلوبة');return v.trim();};
 const username=(v:unknown)=>{const x=str(v,40).toLowerCase();if(!/^[a-z][a-z0-9_.-]{2,39}$/.test(x))throw new Error('اسم المستخدم: أحرف إنكليزية وأرقام، ٣ أحرف على الأقل');return x;};
-const password=(v:unknown)=>{const s=str(v,128);if(s.length<12)throw new Error('كلمة المرور يجب أن تكون ١٢ محرفاً على الأقل');return s;};
+const password=(v:unknown)=>{const s=str(v,128);if(s.length<6)throw new Error('كلمة المرور يجب أن تكون ٦ خانات على الأقل');return s;};
 function check(error:any){if(error){console.error('Fleet operation failed',error.code||error.status);throw new Error(error.code==='23505'?'اسم المستخدم مستخدم مسبقاً':'تعذّر حفظ العملية، حاول مجدداً');}}
 async function addUser(name:string,pass:string){const {data,error}=await db.auth.admin.createUser({email:name+'@nahda-fleet.invalid',password:pass,email_confirm:true});if(error)throw new Error('تعذّر إنشاء الحساب؛ تحقق من اسم المستخدم وكلمة المرور');return data.user!;}
 Deno.serve(async(req:Request)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:cors});if(req.method!=='POST')return response({error:'Method not allowed'},405);try{
