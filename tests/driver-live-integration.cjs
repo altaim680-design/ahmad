@@ -1,0 +1,11 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const path=require('node:path'),dir=path.join(__dirname,'../nahda-fleet');
+const html=fs.readFileSync(path.join(dir,'driver.html'),'utf8'),els={};
+for(const [,id] of html.matchAll(/id="([^"]+)"/g))els[id]={value:'',hidden:false,disabled:false,textContent:'',replaceChildren(){}};
+let watch,updates=[],listeners={};
+const sandbox={console,Intl,Date,Number,Set,Promise,AbortController,URLSearchParams,setTimeout,clearTimeout,setInterval:()=>1,clearInterval(){},document:{hidden:false,getElementById:id=>{assert.ok(els[id],id);return els[id]},createElement:()=>({}),addEventListener:(n,f)=>listeners[n]=f},navigator:{geolocation:{watchPosition(g){watch=g;return 1},clearWatch(){},getCurrentPosition(){}}},location:{search:'',hash:''}};
+sandbox.window={FleetLiveTracker:require('../nahda-fleet/live-tracking.js'),addEventListener:(n,f)=>listeners[n]=f,supabase:{createClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'test'}}})}})}};
+sandbox.fetch=async(url,opts)=>{if(url.includes('bigdatacloud'))return {ok:true,json:async()=>({locality:'سرمدا'})};const b=JSON.parse(opts.body);if(b.action==='driverUpdate'){updates.push(b);return {ok:true,status:200,json:async()=>({time:new Date().toISOString()})}}return {ok:true,status:200,json:async()=>b.action==='driverTrips'?{trips:[{id:'trip-a',plate:'QA',status:'بالطريق'}],company:'QA',username:'qa'}:{plate:'QA',company:'QA',status:'بالطريق'}}};
+vm.runInNewContext(fs.readFileSync(path.join(dir,'driver.js'),'utf8'),sandbox);
+const settle=()=>new Promise(r=>setImmediate(r));
+(async()=>{await settle();assert.equal(els.startTracking.disabled,false);els.startTracking.onclick();await watch({coords:{latitude:36,longitude:37,accuracy:10},timestamp:Date.now()});await settle();assert.equal(updates.length,1);assert.equal(updates[0].trip_id,'trip-a');assert.equal(updates[0].place,'سرمدا');assert.equal(els.stopTracking.hidden,false);els.stopTracking.onclick();assert.equal(els.stopTracking.hidden,true);console.log('PASS: driver page startup, controls, tracking sends own trip automatically, stop UI');})().catch(e=>{console.error(e);process.exit(1)});

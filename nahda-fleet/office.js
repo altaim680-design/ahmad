@@ -62,3 +62,6 @@ async function start(){const legacy=new URLSearchParams(location.hash.slice(1)).
 if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'read_visible_fleet',description:'Read the currently visible trips for the signed-in company account. Does not send messages or change data.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute(input){if(!input||typeof input!=='object'||Object.keys(input).length)throw new Error('Expected an empty object');if(!me||$('office').hidden)throw new Error('Sign in first');return {role:me.role,trips:visibleTrips().map(t=>({plate:t.plate,company:companyName(t.company_id),place:t.place,status:t.status,lastUpdate:t.last_update}))};}})).catch(()=>{});}catch{}}
 window.addEventListener('hashchange',()=>{const token=new URLSearchParams(location.hash.slice(1)).get('driver');if(token)location.assign('/driver.html?trip='+encodeURIComponent(token));});
 start().catch(e=>toast(errorText(e)));
+
+let liveOfficeRefresh=false;
+setInterval(async()=>{if(liveOfficeRefresh||document.hidden||!me||$('office').hidden||$('modal').open)return;liveOfficeRefresh=true;try{await load();reportReady=false;}catch{}finally{liveOfficeRefresh=false;}},30000);
