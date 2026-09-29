@@ -1,22 +1,40 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.117.2';
-const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store'};
+const cors={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Vary':'Origin'};
 const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false,autoRefreshToken:false}});
 const states=['بانتظار التحميل','بالطريق','بانتظار التخليص','تم التسليم'];
-const sha=async(s:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,'0')).join('');
-const response=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,'Content-Type':'application/json'}});
 const str=(v:unknown,max=200)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw new Error('تحقق من الحقول المطلوبة');return v.trim();};
 const username=(v:unknown)=>{const x=str(v,40).toLowerCase();if(!/^[a-z][a-z0-9_.-]{2,39}$/.test(x))throw new Error('اسم المستخدم: أحرف إنكليزية وأرقام، ٣ أحرف على الأقل');return x;};
 const password=(v:unknown)=>{const s=str(v,128);if(s.length<6)throw new Error('كلمة المرور يجب أن تكون ٦ خانات على الأقل');return s;};
 function check(error:any){if(error){console.error('Fleet operation failed',error.code||error.status);throw new Error(error.code==='23505'?'اسم المستخدم مستخدم مسبقاً':'تعذّر حفظ العملية، حاول مجدداً');}}
 async function addUser(name:string,pass:string){const {data,error}=await db.auth.admin.createUser({email:name+'@nahda-fleet.invalid',password:pass,email_confirm:true});if(error)throw new Error('تعذّر إنشاء الحساب؛ تحقق من اسم المستخدم وكلمة المرور');return data.user!;}
-Deno.serve(async(req:Request)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:cors});if(req.method!=='POST')return response({error:'Method not allowed'},405);try{
+Deno.serve(async(req:Request)=>{
+ const origin=req.headers.get('Origin');
+ const allowed=!origin||origin==='https://nahda-syria-fleet.onrender.com';
+ const headers={...cors,...(allowed&&origin?{'Access-Control-Allow-Origin':origin}:{})};
+ let actor:string|null=null,action='',payload:any={};
+ const auditActions=new Set(['createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const response=async(data:unknown,status=200)=>{
+  if(actor&&auditActions.has(action)){
+   const validId=(v:any)=>typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v)?v:null;
+   const {error}=await db.from('fleet_security_audit').insert({actor,action,result_status:status,trip_id:validId(payload.trip_id),company_id:validId(payload.company_id)});
+   if(error)console.error('Security audit write failed',error.code);
+  }
+  return new Response(JSON.stringify(data),{status,headers:{...headers,'Content-Type':'application/json'}});
+ };
+ if(!allowed)return response({error:'Origin not allowed'},403);
+ if(req.method==='OPTIONS')return new Response('ok',{headers});if(req.method!=='POST')return response({error:'Method not allowed'},405);try{
  if(Number(req.headers.get('content-length')||0)>16000)return response({error:'Request too large'},413);
- const raw=await req.text();if(raw.length>16000)return response({error:'Request too large'},413);const b=JSON.parse(raw);const action=b.action;
- if(action==='bootstrap'){
-  const hash=await sha(str(b.token,160));const {data:boot,error}=await db.from('fleet_bootstrap').delete().eq('token_hash',hash).select('id');check(error);if(!boot?.length)return response({error:'غير مسموح'},403);
-  const name=username(b.username);const pass=password(b.password);const user=await addUser(name,pass);const {error:e}=await db.from('fleet_memberships').insert({user_id:user.id,username:name,role:'super_admin'});check(e);return response({ok:true});
- }
+ if(req.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()!=='application/json')return response({error:'JSON required'},415);
+ const reader=req.body?.getReader();let bytes=0;const chunks:Uint8Array[]=[];
+ if(reader){while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>16000){await reader.cancel();return response({error:'Request too large'},413);}chunks.push(value);}}
+ const buffer=new Uint8Array(bytes);let offset=0;for(const c of chunks){buffer.set(c,offset);offset+=c.length;}
+ let b:any;try{b=JSON.parse(new TextDecoder().decode(buffer));}catch{return response({error:'Invalid JSON'},400);}
+ if(!b||typeof b!=='object'||Array.isArray(b)||typeof b.action!=='string')return response({error:'Invalid request'},400);
+ payload=b;action=b.action;
+ const actions=new Set(['driverInfo','driverUpdate','driverTrips','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ if(!actions.has(action))return response({error:'طلب غير معروف'},400);
  const bearer=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');if(!bearer)return response({error:'سجّل الدخول'},401);const {data:{user},error:ue}=await db.auth.getUser(bearer);if(ue||!user)return response({error:'انتهت الجلسة؛ سجّل الدخول مجدداً'},401);
+ actor=user.id;const {data:withinLimit,error:rateError}=await db.rpc('fleet_rate_limit',{p_actor:user.id});if(rateError)return response({error:'تعذّر تنفيذ الطلب'},503);if(!withinLimit)return response({error:'محاولات كثيرة؛ انتظر قليلاً ثم أعد المحاولة'},429);
  if(action==='driverInfo'||action==='driverUpdate'||action==='driverTrips'){
   const {data:driver}=await db.from('fleet_drivers').select('*').eq('user_id',user.id).eq('active',true).maybeSingle();
   if(!driver)return response({error:'هذا الحساب ليس حساب سائق فعّال'},403);

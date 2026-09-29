@@ -1,0 +1,2 @@
+'use strict';
+try{const t=new URLSearchParams(location.hash.slice(1)).get('driver')||new URLSearchParams(location.search).get('trip');if(t)location.replace('/driver.html?trip='+encodeURIComponent(t));}catch{}
