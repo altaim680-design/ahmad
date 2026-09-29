@@ -1,0 +1,8 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const {stripTypeScriptTypes}=require('node:module');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../fleet-backend/fleet-api.ts'),'utf8').replace(/^import[^\n]+\n/,'');
+let handle,role='company_admin',reads=[];
+const db={auth:{getUser:async()=>({data:{user:{id:'company-user'}}})},from(table){reads.push(table);if(table!=='fleet_memberships')throw Error('Unexpected access: '+table);const q={select(){return q},eq(){return q},async maybeSingle(){return {data:{user_id:'company-user',company_id:'company',active:true,role}}}};return q;}};
+vm.runInNewContext(stripTypeScriptTypes(source),{createClient:()=>db,Deno:{env:{get:()=>''},serve:f=>handle=f},Response,console,Date,TextEncoder,crypto:require('node:crypto').webcrypto});
+(async()=>{for(const action of ['createTrip','createDriver','assignDriver','resetDriverPassword','driverAccountInfo','officeUpdate','closeTrip','createCompany','setCompanyActive','resetCompanyPassword','driverLink']){reads=[];const response=await handle(new Request('https://test.local',{method:'POST',headers:{Authorization:'Bearer test'},body:JSON.stringify({action,trip_id:'trip',company_id:'company'})}));assert.equal(response.status,403,action);assert.deepEqual(reads,['fleet_memberships']);}
+console.log('PASS: all 11 company fleet API actions rejected before any trip, company or driver-account access');})().catch(e=>{console.error(e);process.exit(1)});

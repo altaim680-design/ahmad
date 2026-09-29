@@ -34,6 +34,8 @@ Deno.serve(async(req:Request)=>{if(req.method==='OPTIONS')return new Response('o
   const {data,error}=await db.rpc('fleet_append_update',{p_trip:trip.id,p_place:str(b.place,200),p_status:b.status,p_note:typeof b.note==='string'?b.note.slice(0,500):'',p_source:'driver',p_lat:b.latitude,p_lon:b.longitude,p_accuracy:b.accuracy});check(error);return response({ok:true,time:data});
  }
  const {data:member}=await db.from('fleet_memberships').select('*').eq('user_id',user.id).eq('active',true).maybeSingle();if(!member)return response({error:'الحساب غير مخوّل'},403);const root=member.role==='super_admin';
+ // Company memberships have read-only access; driver updates are authenticated separately above.
+ if(!root)return response({error:'للمدير العام فقط'},403);
  const can=async(cid:string)=>{if(!root&&member.company_id!==cid)throw new Error('لا تملك صلاحية لهذه الشركة');const {data:c}=await db.from('fleet_companies').select('*').eq('id',cid).maybeSingle();if(!c||(!root&&!c.active))throw new Error('الشركة غير متاحة');return c;};
  if(action==='createCompany'){
   if(!root)return response({error:'للمدير العام فقط'},403);const name=str(b.name,120),un=username(b.username),pw=password(b.password);const account=await addUser(un,pw);let cid:string|null=null;
