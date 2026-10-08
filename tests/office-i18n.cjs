@@ -7,6 +7,9 @@ vm.createContext(sandbox);vm.runInContext(src,sandbox);await new Promise(r=>setI
 vm.runInContext("me={role:'super_admin'};companies=[{id:'c',name:'شركة أحمد',active:true}];trips=[{id:'a',company_id:'c',plate:'ABC-123',driver:'محمد',place:'سرمدا',note:'ملاحظة خاصة',status:'بالطريق',closed:false}];members=[];render();",sandbox);
 assert.ok(els.tripsList.innerHTML.includes('شركة أحمد'));assert.ok(els.tripsList.innerHTML.includes('ملاحظة خاصة'));assert.ok(els.tripsList.innerHTML.includes(lang==='en'?'On the road':'Yolda'));
 vm.runInContext("me={role:'company_admin',company_id:'c'};render();",sandbox);assert.ok(!els.tripsList.innerHTML.includes('data-op="link"'));assert.ok(!els.tripsList.innerHTML.includes('data-op="update"'));assert.ok(!els.tripsList.innerHTML.includes('data-op="close"'));assert.ok(els.tripsList.innerHTML.includes('data-op="history"'));
+vm.runInContext("me={role:'super_admin',user_id:'owner',is_owner:true};members=[{user_id:'owner',username:'ahmad',is_owner:true,role:'super_admin',active:true},{user_id:'assistant',username:'helper',is_owner:false,role:'super_admin',active:true}];render();",sandbox);
+assert.ok(els.companiesList.innerHTML.includes('data-action="delete"'));assert.ok(els.adminsList.innerHTML.includes('data-admin="assistant"'));assert.ok(!els.adminsList.innerHTML.includes('data-admin="owner"'));
+vm.runInContext("me={role:'super_admin',user_id:'assistant',is_owner:false};render();",sandbox);assert.ok(!els.companiesList.innerHTML.includes('data-action="delete"'));assert.ok(!els.adminsList.innerHTML.includes('data-admin='));
 const option=vm.runInContext("options(states,'بالطريق')",sandbox);assert.ok(option.includes('value="بالطريق" selected'));assert.ok(option.includes(lang==='en'?'On the road':'Yolda'));
 const msg=vm.runInContext('singleMessage(trips[0])',sandbox);assert.ok(msg.includes('سرمدا'));assert.ok(msg.includes(lang==='en'?'Vehicle number':'Araç plakası'));
 }

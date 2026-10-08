@@ -17,3 +17,9 @@ Encryption and limits:
 - No claim of total protection, penetration-test certification, or DDoS mitigation beyond hosting/provider controls.
 
 Verification: security.cjs request-gate tests, company-readonly.cjs authorization tests, live tracking/UI localization regression tests, transactional real-database rate-limit test, privilege inspection, and published page/API checks.
+
+## Owner controls
+
+Apply `owner-controls.sql` before deploying this API version. The original owner's membership has `is_owner=true` (unique). Browser roles cannot update memberships. Only that active owner may suspend/reactivate other general administrators or permanently delete a company. Self/owner suspension is rejected. Inactive memberships fail both API and RLS checks; the office UI signs out at its next membership refresh.
+
+Company deletion requires its exact name and runs the company/trip/location/access-row deletion in one database transaction, using a service-role-only SECURITY INVOKER RPC that rechecks ownership. Associated Auth users are subsequently removed through the Admin API; a cleanup warning is returned if any fail, while their fleet access has already been removed. Security audit records remain. Existing exported reports are not erased.
