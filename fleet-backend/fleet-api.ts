@@ -12,7 +12,7 @@ Deno.serve(async(req:Request)=>{
  const allowed=!origin||origin==='https://nahda-syria-fleet.onrender.com';
  const headers={...cors,...(allowed&&origin?{'Access-Control-Allow-Origin':origin}:{})};
  let actor:string|null=null,action='',payload:any={};
- const auditActions=new Set(['createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const auditActions=new Set(['createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  const response=async(data:unknown,status=200)=>{
   if(actor&&auditActions.has(action)){
    const validId=(v:any)=>typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v)?v:null;
@@ -31,7 +31,7 @@ Deno.serve(async(req:Request)=>{
  let b:any;try{b=JSON.parse(new TextDecoder().decode(buffer));}catch{return response({error:'Invalid JSON'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b)||typeof b.action!=='string')return response({error:'Invalid request'},400);
  payload=b;action=b.action;
- const actions=new Set(['driverInfo','driverUpdate','driverTrips','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const actions=new Set(['driverInfo','driverUpdate','driverTrips','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  if(!actions.has(action))return response({error:'طلب غير معروف'},400);
  const bearer=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');if(!bearer)return response({error:'سجّل الدخول'},401);const {data:{user},error:ue}=await db.auth.getUser(bearer);if(ue||!user)return response({error:'انتهت الجلسة؛ سجّل الدخول مجدداً'},401);
  actor=user.id;const {data:withinLimit,error:rateError}=await db.rpc('fleet_rate_limit',{p_actor:user.id});if(rateError)return response({error:'تعذّر تنفيذ الطلب'},503);if(!withinLimit)return response({error:'محاولات كثيرة؛ انتظر قليلاً ثم أعد المحاولة'},429);
@@ -55,6 +55,13 @@ Deno.serve(async(req:Request)=>{
  // Company memberships have read-only access; driver updates are authenticated separately above.
  if(!root)return response({error:'للمدير العام فقط'},403);
  const can=async(cid:string)=>{if(!root&&member.company_id!==cid)throw new Error('لا تملك صلاحية لهذه الشركة');const {data:c}=await db.from('fleet_companies').select('*').eq('id',cid).maybeSingle();if(!c||(!root&&!c.active))throw new Error('الشركة غير متاحة');return c;};
+ if(action==='createAdmin'){
+  const un=username(b.username),pw=password(b.password);const account=await addUser(un,pw);
+  try{
+   const {error}=await db.from('fleet_memberships').insert({user_id:account.id,username:un,role:'super_admin',company_id:null,active:true});check(error);
+   return response({ok:true,username:un});
+  }catch(e){await db.auth.admin.deleteUser(account.id);throw e;}
+ }
  if(action==='createCompany'){
   if(!root)return response({error:'للمدير العام فقط'},403);const name=str(b.name,120),un=username(b.username),pw=password(b.password);const account=await addUser(un,pw);let cid:string|null=null;
   try{const {data:c,error}=await db.from('fleet_companies').insert({name}).select().single();check(error);cid=c.id;const {error:e}=await db.from('fleet_memberships').insert({user_id:account.id,username:un,role:'company_admin',company_id:cid});check(e);return response({ok:true,company:c,username:un});}catch(e){if(cid)await db.from('fleet_companies').delete().eq('id',cid);await db.auth.admin.deleteUser(account.id);throw e;}
