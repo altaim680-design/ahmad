@@ -33,3 +33,9 @@ Apply `fleet-backend/trip-barcodes.sql` once before deploying the barcode UI. It
 ## Camera barcode search
 
 `barcode-reader.js` vendors @zxing/library 0.21.3 under its bundled Apache-2.0 license, with SHA384 integrity. `camera-barcode.js` acquires video-only camera access after the Scan button, prefers the rear camera, and decodes CODE128 locally (no frames uploaded). Two valid matching trip codes trigger a permission-scoped search. Closing/cancelling the dialog, switching page/modal, hiding the page or signing out stops tracks; late camera permission resolutions are also released. The existing manual/scanner search remains available. Tests cover actual pixel decoding, denied permission, pending-request cancellation and stream shutdown. Physical device compatibility still requires testing.
+
+## Private trip PDF attachments and scan sound
+
+Apply `fleet-backend/trip-files.sql` once, then deploy the updated Edge API before the frontend. The private `fleet-trip-files` bucket restricts MIME type to application/pdf and size to 10 MiB. Administrators upload/delete; company members may read their own company's records and obtain 60-second signed URLs. Original filenames (including Arabic) live in an RLS-protected metadata table; storage uses random UUID paths. Client validation checks extension, size and PDF header; this is not an antivirus/content sanitization service. Failed metadata saves attempt storage cleanup. Company deletion removes metadata transactionally, then attempts blob cleanup with a warning on failure. Signed URLs already issued remain valid for up to 60 seconds; downloaded copies cannot be revoked.
+
+`scan-sound.js` unlocks Web Audio on the camera button gesture and plays a short tone when a trip barcode is successfully recognized. Unsupported/muted audio never blocks search.
