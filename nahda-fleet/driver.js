@@ -2,8 +2,9 @@
 (()=>{
 const t=window.KhotwatiI18n.t,locale=window.KhotwatiI18n.locale;
 const $=id=>document.getElementById(id),states=['بانتظار التحميل','بالطريق','بانتظار التخليص','تم التسليم'];
-let tripId='',gps=null,ready=false,epoch=0;
+let tripId=new URLSearchParams(location.search).get('notifyTrip')||'',gps=null,ready=false,epoch=0;
 const db=window.supabase.createClient('https://ymkzrzdmdrqllpvqdlfx.supabase.co','sb_publishable_NnABPXhnEsU9-jVgp6DhRQ_Fl-c1xRH',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'khotwati-driver-session'}});
+window.KhotwatiDriverPush?.bind(db,window.KhotwatiI18n.language);
 const stamp=t=>new Intl.DateTimeFormat(locale,{timeZone:'Asia/Damascus',dateStyle:'short',timeStyle:'short'}).format(new Date(t));
 function errorText(e){return e.name==='AbortError'?window.KhotwatiI18n.t('الاتصال تأخر. تحقق من الإنترنت واضغط إعادة المحاولة.'):/fetch|network|load failed/i.test(e.message)?window.KhotwatiI18n.t('تعذّر الاتصال بخدمة الرحلات. تحقق من الإنترنت وحاول مجدداً.'):window.KhotwatiI18n.t(e.message||'تعذّر فتح الرحلة');}
 async function api(action,body={},signal){const c=new AbortController(),timer=setTimeout(()=>c.abort(),25000);const abort=()=>c.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)c.abort();try{const {data:{session}}=await db.auth.getSession();if(!session){showLogin();throw new Error(window.KhotwatiI18n.t('سجّل الدخول أولاً'));}const r=await fetch('https://ymkzrzdmdrqllpvqdlfx.supabase.co/functions/v1/fleet-api',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json',apikey:'sb_publishable_NnABPXhnEsU9-jVgp6DhRQ_Fl-c1xRH'},body:JSON.stringify({action,trip_id:tripId,...body}),signal:c.signal});let data;try{data=await r.json();}catch{throw new Error(window.KhotwatiI18n.t('تعذّر قراءة رد خدمة الرحلات؛ أعد المحاولة'));}if(r.status===401)showLogin();if(!r.ok||data.error){const error=new Error(data.error||window.KhotwatiI18n.t('تعذّر تنفيذ الطلب'));error.status=r.status;throw error;}return data;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}}
@@ -50,6 +51,7 @@ async function loadAccount(){
  $('driverAccountStatus').textContent=window.KhotwatiI18n.t('جارٍ تحميل رحلاتك…');$('driverPage').hidden=true;ready=false;gps=null;
  try{
   const data=await api('driverTrips');
+  window.KhotwatiDriverPush?.refresh();
   $('driverTrips').replaceChildren(...data.trips.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.plate+' — '+(t.destination||window.KhotwatiI18n.t('بدون وجهة'));return o;}));
   $('driverAccountStatus').textContent=data.company+' · '+data.username+(data.trips.length?'':window.KhotwatiI18n.t(' — لا توجد رحلات مفتوحة مرتبطة بحسابك. تواصل مع المكتب.'));
   tripId=data.trips.some(t=>t.id===tripId)?tripId:(data.trips[0]?.id||'');$('driverTrips').value=tripId;
@@ -60,7 +62,7 @@ $('driverLoginForm').onsubmit=async e=>{e.preventDefault();const button=e.submit
  const {error}=await db.auth.signInWithPassword({email:$('driverUsername').value.trim().toLowerCase()+'@nahda-fleet.invalid',password:$('driverPassword').value});if(error)throw error;
  $('driverPassword').value='';await loadAccount();
 }catch(e){if(!$('driverLogin').hidden){$('driverLoginError').textContent=/Invalid login/i.test(e.message)?window.KhotwatiI18n.t('اسم المستخدم أو كلمة المرور غير صحيحة'):errorText(e);}}finally{button.disabled=false;}};
-$('driverLogout').onclick=async()=>{stopLive();const {error}=await db.auth.signOut({scope:'local'});if(error){$('driverAccountStatus').textContent=errorText(error);return;}tripId='';showLogin();};
+$('driverLogout').onclick=async()=>{stopLive();try{await window.KhotwatiDriverPush?.disable();}catch{}const {error}=await db.auth.signOut({scope:'local'});if(error){$('driverAccountStatus').textContent=errorText(error);return;}tripId='';showLogin();};
 $('reloadTrips').onclick=()=>loadAccount().catch(()=>{});
 $('driverTrips').onchange=()=>{tripId=$('driverTrips').value;gps=null;$('driverPlace').value='';$('driverNote').value='';$('gpsStatus').textContent='';loadTrip();};
 loadAccount().catch(()=>{});
