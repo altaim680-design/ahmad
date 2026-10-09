@@ -23,3 +23,9 @@ Live tracking uses watchPosition and fresh-position polling, throttled to one up
 Localization: Arabic (RTL), English and Turkish (LTR). Language preference uses localStorage and optional ?lang=ar/en/tr. Switching language reloads the page and stops foreground tracking, which the driver can restart. Static interface and source-authored dynamic text are translated; user-provided names, notes, and database status values remain untouched. Reports and WhatsApp drafts use the selected language.
 
 Company memberships are read-only for fleet operations. All staff Edge API operations require super_admin; driver authentication and updates remain separately scoped. Companies retain own-data reads, reports, exports, and sharing. A company user may change their own account password but cannot manage any driver account.
+
+## Trip barcodes
+
+Apply `fleet-backend/trip-barcodes.sql` once before deploying the barcode UI. It backfills existing trips and generates unique KW + 10-digit identifiers on new trips. The existing security-invoker view exposes the identifier under the same company permissions. Barcodes are identifiers, not authentication secrets. Search requires login and includes closed trips visible to that account. A keyboard-mode barcode reader can fill the barcode search field; camera scanning is not implemented.
+
+`barcode-code128.js` vendors JsBarcode 3.12.1 (CODE128 build), with its MIT license in `barcode-LICENSE.txt` and SHA384 integrity pinned in index.html. `trip-barcode.js` renders encoded data as local SVG with no third-party barcode service. Barcode printing uses the existing print dialog and CSS; SVG download is also available. Tests include independent symbol/checksum decoding through ReportLab, but no physical printer/scanner/mobile-device validation has been performed.
