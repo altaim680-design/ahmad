@@ -13,7 +13,9 @@ function errorText(e){const s=e?.message||String(e);if(/Invalid login/i.test(s))
 async function api(action,body={}){const {data:{session}}=await db.auth.getSession();const r=await fetch(URL_DB+'/functions/v1/fleet-api',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,...(session?{Authorization:'Bearer '+session.access_token}:{})},body:JSON.stringify({action,...body})});const result=await r.json();if(!r.ok||result.error)throw new Error(result.error||window.KhotwatiI18n.t('تعذّر تنفيذ العملية'));return result;}
 async function checked(p){const r=await p;if(r.error)throw r.error;return r.data;}
 async function all(table,select='*'){let out=[];for(let start=0;;start+=500){const rows=await checked(db.from(table).select(select).order(table==='fleet_memberships'?'user_id':'id').range(start,start+499));out.push(...rows);if(rows.length<500)return out;}}
-function modal(title,html){document.body.classList.remove('barcode-print');$('modalTitle').textContent=title;$('modalContent').innerHTML=html;$('modalError').textContent='';$('modal').showModal();}
+let cameraScanner=null;
+function stopCamera(){cameraScanner?.stop();cameraScanner=null;}
+function modal(title,html){stopCamera();document.body.classList.remove('barcode-print');$('modalTitle').textContent=title;$('modalContent').innerHTML=html;$('modalError').textContent='';$('modal').showModal();}
 function formHandler(id,fn){$(id).onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;$('modalError').textContent='';try{await fn(new FormData(e.target));}catch(err){$('modalError').textContent=errorText(err);}finally{btn.disabled=false;}};}
 const field=(name,label,type='text',extra='')=>'<div><label for="f_'+name+'">'+label+'</label><input id="f_'+name+'" name="'+name+'" type="'+type+'" '+extra+'></div>';
 const options=(values,chosen)=>values.map(v=>'<option value="'+esc(v)+'" '+(v===chosen?'selected':'')+'>'+esc(window.KhotwatiI18n.t(v))+'</option>').join('');
@@ -53,6 +55,17 @@ function showBarcode(trip){
   $('saveBarcode').onclick=()=>{const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=trip.barcode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
  }catch(e){toast(t('تعذّر عرض الباركود؛ حدّث الصفحة وحاول مجدداً.'));}
 }
+function scanBarcode(){
+ if(!navigator.mediaDevices?.getUserMedia||!window.ZXing||!window.KhotwatiCamera){toast(t('الكاميرا غير متاحة؛ افتح الموقع في Safari أو Chrome واسمح باستخدام الكاميرا.'));return;}
+ modal(t('مسح بالكاميرا'),'<div class="camera-preview"><video id="barcodeVideo" autoplay muted playsinline></video><div class="camera-guide" aria-hidden="true"></div></div><p id="cameraStatus" role="status">'+t('اسمح باستخدام الكاميرا لقراءة الباركود…')+'</p><p class="muted">'+t('وجّه الكاميرا إلى الباركود كاملاً مع إضاءة جيدة. تتم القراءة على جهازك دون رفع الصور.')+'</p><button id="stopBarcodeCamera" class="secondary wide">'+t('إغلاق الكاميرا')+'</button>');
+ const video=$('barcodeVideo');video.muted=true;video.setAttribute('playsinline','');
+ const scanner=window.KhotwatiCamera.create({video,canvas:document.createElement('canvas'),
+  onReady:()=>{$('cameraStatus').textContent=t('الكاميرا جاهزة؛ ثبّت الباركود داخل الإطار.');},
+  onResult:code=>{stopCamera();$('modal').close();$('barcodeSearch').value=code;findBarcode(code);},
+  onError:error=>{$('cameraStatus').textContent=t(error?.name==='NotAllowedError'?'إذن الكاميرا مرفوض. اسمح بالكاميرا من إعدادات المتصفح ثم افتح المسح مجدداً.':error?.name==='NotFoundError'?'لم يتم العثور على كاميرا في هذا الجهاز.':'تعذّر تشغيل الكاميرا أو قراءة الصورة. أغلق التطبيقات التي تستخدم الكاميرا وحاول مجدداً.');}
+ });
+ cameraScanner=scanner;$('stopBarcodeCamera').onclick=()=>{stopCamera();$('modal').close();};scanner.start();
+}
 function findBarcode(value){
  const code=window.KhotwatiBarcode.normalize(value);
  if(!window.KhotwatiBarcode.valid(code)){toast(t('أدخل رمز باركود صحيح يبدأ بـ KW ويتبعه ١٠ أرقام'));return;}
@@ -78,7 +91,9 @@ async function driverAccount(t){
 }
 async function makeReport(){const date=$('reportDate').value;if(!date)throw new Error(window.KhotwatiI18n.t('اختر تاريخ التقرير'));const company=$('reportCompany').value;reportRows=await checked(db.rpc('fleet_report',{p_day:date,p_company:company||null}));reportTitle=window.KhotwatiI18n.t('تقرير حركة السيارات — ')+date+'\n'+(company?companyName(company):window.KhotwatiI18n.t('كل الشركات'));const text=[reportTitle,...reportRows.map((t,i)=>(i+1)+'. '+t.plate+' | '+companyName(t.company_id)+window.KhotwatiI18n.t('\nالموقع: ')+(t.place||window.KhotwatiI18n.t('لا يوجد تحديث'))+' | '+window.KhotwatiI18n.t(t.status)+window.KhotwatiI18n.t('\nآخر تحديث: ')+stamp(t.last_update)+(t.last_update&&day(t.last_update)!==date?window.KhotwatiI18n.t(' ⚠ موقع قديم'):'')+(t.note?window.KhotwatiI18n.t('\nملاحظة: ')+t.note:''))].join('\n\n');$('reportText').value=text;$('reportWhatsApp').href='https://wa.me/?text='+encodeURIComponent(text);$('reportTable').innerHTML='<h3>'+esc(reportTitle).replace('\n',' · ')+'</h3>'+(reportRows.length?window.KhotwatiI18n.t('<div class="table-wrap"><table><thead><tr><th>الشركة / السيارة</th><th>المكان</th><th>الحالة</th><th>آخر تحديث</th></tr></thead><tbody>')+reportRows.map(t=>'<tr><td>'+esc(companyName(t.company_id))+'<br>'+esc(t.plate)+'</td><td>'+esc(t.place||window.KhotwatiI18n.t('لا يوجد تحديث'))+'</td><td>'+esc(window.KhotwatiI18n.t(t.status))+'</td><td>'+esc(stamp(t.last_update))+(t.last_update&&day(t.last_update)!==date?window.KhotwatiI18n.t('<br>⚠ موقع قديم'):'')+'</td></tr>').join('')+'</tbody></table></div>':window.KhotwatiI18n.t('<div class="empty">لا توجد رحلات لهذا التاريخ.</div>'));reportReady=true;}
 function bind(){
- $('modal').addEventListener('close',()=>document.body.classList.remove('barcode-print'));
+ $('modal').addEventListener('close',()=>{stopCamera();document.body.classList.remove('barcode-print');});
+ $('modal').addEventListener('cancel',stopCamera);
+ $('scanBarcode').onclick=scanBarcode;
  $('barcodeSearchForm').onsubmit=e=>{e.preventDefault();findBarcode($('barcodeSearch').value);};
  $('newAdmin').onclick=newAdmin;
  $('adminsList').onclick=e=>{const b=e.target.closest('[data-admin]');if(b)adminAction(b.dataset.admin);};
@@ -86,7 +101,7 @@ function bind(){
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));['companyFilter','tripFilter'].forEach(id=>$(id).onchange=render);$('search').oninput=render;
  $('refresh').onclick=async()=>{try{await load();reportReady=false;toast(window.KhotwatiI18n.t('تم تحديث البيانات'));}catch(e){toast(errorText(e));}};
  $('loginForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('loginError').textContent='';try{await checked(db.auth.signInWithPassword({email:$('username').value.trim().toLowerCase()+'@nahda-fleet.invalid',password:$('password').value}));await load();$('password').value='';}catch(err){$('loginError').textContent=errorText(err);await db.auth.signOut();}finally{button.disabled=false;}};
- $('logout').onclick=async()=>{await db.auth.signOut();location.reload();};
+ $('logout').onclick=async()=>{stopCamera();await db.auth.signOut();location.reload();};
  $('passwordBtn').onclick=()=>{modal(window.KhotwatiI18n.t('تغيير كلمة المرور'),'<form id="passwordForm">'+field('password',window.KhotwatiI18n.t('كلمة مرور جديدة'),'password','required minlength="6" maxlength="128" autocomplete="new-password"')+field('confirm',window.KhotwatiI18n.t('تأكيد كلمة المرور'),'password','required minlength="6" autocomplete="new-password"')+window.KhotwatiI18n.t('<button class="primary wide">حفظ كلمة المرور</button></form>'));formHandler('passwordForm',async f=>{if(f.get('password')!==f.get('confirm'))throw new Error(window.KhotwatiI18n.t('كلمتا المرور غير متطابقتين'));await checked(db.auth.updateUser({password:f.get('password')}));$('modal').close();toast(window.KhotwatiI18n.t('تم تغيير كلمة المرور'));});};
  $('newCompany').onclick=()=>{modal(window.KhotwatiI18n.t('شركة جديدة وحساب الأدمن'),'<form id="companyForm">'+field('name',window.KhotwatiI18n.t('اسم الشركة'),'text','required maxlength="120"')+field('username',window.KhotwatiI18n.t('اسم مستخدم الأدمن'),'text','required pattern="[a-zA-Z][a-zA-Z0-9_.-]{2,39}" dir="ltr" autocomplete="off"')+field('password',window.KhotwatiI18n.t('كلمة مرور الأدمن'),'password','required minlength="6" maxlength="128" autocomplete="new-password"')+window.KhotwatiI18n.t('<p class="muted">احفظ بيانات الدخول وشاركها مع أدمن الشركة. لا تُرسل رسالة تلقائياً.</p><button class="primary wide">إنشاء الشركة والحساب</button></form>'));formHandler('companyForm',async f=>{const data=Object.fromEntries(f);const r=await api('createCompany',data);$('modal').close();await load();toast(window.KhotwatiI18n.t('تم إنشاء ')+data.name+window.KhotwatiI18n.t(' — اسم المستخدم: ')+r.username);});};
  $('newTrip').onclick=()=>{if(!root())return;const active=companies.filter(c=>c.active);if(!active.length){toast(window.KhotwatiI18n.t('أضف شركة فعّالة أولاً'));if(root())switchTab('companies');return;}modal(window.KhotwatiI18n.t('إضافة رحلة سيارة'),window.KhotwatiI18n.t('<form id="tripForm"><div class="form-grid"><div class="full"><label for="f_company">الشركة</label><select id="f_company" name="company_id">')+active.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('')+'</select></div>'+field('plate',window.KhotwatiI18n.t('رقم السيارة'),'text','required maxlength="60"')+field('driver',window.KhotwatiI18n.t('اسم السائق'),'text','maxlength="100"')+field('phone',window.KhotwatiI18n.t('هاتف السائق'),'tel','maxlength="40"')+field('destination',window.KhotwatiI18n.t('الوجهة'),'text','maxlength="140"')+field('declaration_no',window.KhotwatiI18n.t('رقم البيان'),'text','maxlength="80"')+window.KhotwatiI18n.t('</div><button class="primary wide">حفظ الرحلة</button></form>'));formHandler('tripForm',async f=>{const created=await api('createTrip',Object.fromEntries(f));$('modal').close();await load();reportReady=false;await driverAccount(created.trip);toast(window.KhotwatiI18n.t('حُفظت الرحلة. أنشئ حساب السائق أو اربط حساباً موجوداً.'));});};
@@ -107,3 +122,6 @@ start().catch(e=>toast(errorText(e)));
 
 let liveOfficeRefresh=false;
 setInterval(async()=>{if(liveOfficeRefresh||document.hidden||!me||$('office').hidden||$('modal').open)return;liveOfficeRefresh=true;try{await load();reportReady=false;}catch{}finally{liveOfficeRefresh=false;}},30000);
+
+window.addEventListener('pagehide',stopCamera);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&cameraScanner){stopCamera();$('modal').close();}});

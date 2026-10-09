@@ -26,6 +26,10 @@ Company memberships are read-only for fleet operations. All staff Edge API opera
 
 ## Trip barcodes
 
-Apply `fleet-backend/trip-barcodes.sql` once before deploying the barcode UI. It backfills existing trips and generates unique KW + 10-digit identifiers on new trips. The existing security-invoker view exposes the identifier under the same company permissions. Barcodes are identifiers, not authentication secrets. Search requires login and includes closed trips visible to that account. A keyboard-mode barcode reader can fill the barcode search field; camera scanning is not implemented.
+Apply `fleet-backend/trip-barcodes.sql` once before deploying the barcode UI. It backfills existing trips and generates unique KW + 10-digit identifiers on new trips. The existing security-invoker view exposes the identifier under the same company permissions. Barcodes are identifiers, not authentication secrets. Search requires login and includes closed trips visible to that account. A keyboard-mode barcode reader can fill the barcode search field; camera scanning is available through the Scan with camera button.
 
 `barcode-code128.js` vendors JsBarcode 3.12.1 (CODE128 build), with its MIT license in `barcode-LICENSE.txt` and SHA384 integrity pinned in index.html. `trip-barcode.js` renders encoded data as local SVG with no third-party barcode service. Barcode printing uses the existing print dialog and CSS; SVG download is also available. Tests include independent symbol/checksum decoding through ReportLab, but no physical printer/scanner/mobile-device validation has been performed.
+
+## Camera barcode search
+
+`barcode-reader.js` vendors @zxing/library 0.21.3 under its bundled Apache-2.0 license, with SHA384 integrity. `camera-barcode.js` acquires video-only camera access after the Scan button, prefers the rear camera, and decodes CODE128 locally (no frames uploaded). Two valid matching trip codes trigger a permission-scoped search. Closing/cancelling the dialog, switching page/modal, hiding the page or signing out stops tracks; late camera permission resolutions are also released. The existing manual/scanner search remains available. Tests cover actual pixel decoding, denied permission, pending-request cancellation and stream shutdown. Physical device compatibility still requires testing.
