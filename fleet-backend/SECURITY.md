@@ -23,3 +23,12 @@ Verification: security.cjs request-gate tests, company-readonly.cjs authorizatio
 Apply `owner-controls.sql` before deploying this API version. The original owner's membership has `is_owner=true` (unique). Browser roles cannot update memberships. Only that active owner may suspend/reactivate other general administrators or permanently delete a company. Self/owner suspension is rejected. Inactive memberships fail both API and RLS checks; the office UI signs out at its next membership refresh.
 
 Company deletion requires its exact name and runs the company/trip/location/access-row deletion in one database transaction, using a service-role-only SECURITY INVOKER RPC that rechecks ownership. Associated Auth users are subsequently removed through the Admin API; a cleanup warning is returned if any fail, while their fleet access has already been removed. Security audit records remain. Existing exported reports are not erased.
+
+
+## Company shipment access and unified sign-in
+
+All accounts sign in at `/` using the persistent `khotwati-driver-session` storage key. `resolveAccount` validates the authenticated user, active membership/driver and active company before routing. Existing company_admin accounts are company managers with company-wide read-only visibility. New company_staff accounts see only trips assigned through assigned_member_id. Only global administrators manage accounts and assignment. Assignment has a composite company/member foreign key.
+
+`fleet_private.can_trip` constrains trips, updates, the security-invoker status view, reports, PDF metadata and Storage reads. Driver PDF listing and 60-second signed open/download URLs use fleet-api with active driver/company and own open trip checks, including file-to-trip validation. Drivers cannot upload/delete files. Company staff cannot mutate trips or account credentials.
+
+Apply company-staff.sql before deploying the API/UI. Existing trips remain unassigned and visible to managers until an administrator assigns a shipment owner. Tests: company-staff-rls.sql is rolled back after real RLS checks; account-routing-files.cjs verifies driver file authorization and routing. Physical phone download behavior still requires a device test.

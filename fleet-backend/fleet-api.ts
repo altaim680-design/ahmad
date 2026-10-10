@@ -12,7 +12,7 @@ Deno.serve(async(req:Request)=>{
  const allowed=!origin||origin==='https://nahda-syria-fleet.onrender.com';
  const headers={...cors,...(allowed&&origin?{'Access-Control-Allow-Origin':origin}:{})};
  let actor:string|null=null,action='',payload:any={};
- const auditActions=new Set(['setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const auditActions=new Set(['createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  const response=async(data:unknown,status=200)=>{
   if(actor&&auditActions.has(action)){
    const validId=(v:any)=>typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v)?v:null;
@@ -31,11 +31,18 @@ Deno.serve(async(req:Request)=>{
  let b:any;try{b=JSON.parse(new TextDecoder().decode(buffer));}catch{return response({error:'Invalid JSON'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b)||typeof b.action!=='string')return response({error:'Invalid request'},400);
  payload=b;action=b.action;
- const actions=new Set(['driverInfo','driverUpdate','driverTrips','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const actions=new Set(['driverFiles','driverFileUrl','resolveAccount','driverInfo','driverUpdate','driverTrips','createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  if(!actions.has(action))return response({error:'طلب غير معروف'},400);
  const bearer=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');if(!bearer)return response({error:'سجّل الدخول'},401);const {data:{user},error:ue}=await db.auth.getUser(bearer);if(ue||!user)return response({error:'انتهت الجلسة؛ سجّل الدخول مجدداً'},401);
  actor=user.id;const {data:withinLimit,error:rateError}=await db.rpc('fleet_rate_limit',{p_actor:user.id});if(rateError)return response({error:'تعذّر تنفيذ الطلب'},503);if(!withinLimit)return response({error:'محاولات كثيرة؛ انتظر قليلاً ثم أعد المحاولة'},429);
- if(action==='driverInfo'||action==='driverUpdate'||action==='driverTrips'){
+ if(action==='resolveAccount'){
+  const {data:m,error:me}=await db.from('fleet_memberships').select('role,active,company_id').eq('user_id',user.id).maybeSingle();check(me);
+  if(m){if(!m.active)return response({error:'الحساب غير مخوّل'},403);if(m.company_id){const {data:c}=await db.from('fleet_companies').select('active').eq('id',m.company_id).maybeSingle();if(!c?.active)return response({error:'الشركة متوقفة'},403);}return response({role:m.role});}
+  const {data:d,error:de}=await db.from('fleet_drivers').select('active,company_id').eq('user_id',user.id).maybeSingle();check(de);
+  if(d?.active){const {data:c}=await db.from('fleet_companies').select('active').eq('id',d.company_id).maybeSingle();if(c?.active)return response({role:'driver'});}
+  return response({error:'الحساب غير مخوّل'},403);
+ }
+ if(action==='driverInfo'||action==='driverUpdate'||action==='driverTrips'||action==='driverFiles'||action==='driverFileUrl'){
   const {data:driver}=await db.from('fleet_drivers').select('*').eq('user_id',user.id).eq('active',true).maybeSingle();
   if(!driver)return response({error:'هذا الحساب ليس حساب سائق فعّال'},403);
   const {data:company}=await db.from('fleet_companies').select('name,active').eq('id',driver.company_id).maybeSingle();
@@ -46,6 +53,8 @@ Deno.serve(async(req:Request)=>{
   }
   const {data:trip}=await db.from('fleet_trips').select('*').eq('id',str(b.trip_id,50)).eq('driver_user_id',user.id).eq('company_id',driver.company_id).eq('closed',false).maybeSingle();
   if(!trip)return response({error:'الرحلة غير متاحة لهذا الحساب'},403);
+  if(action==='driverFiles'){const {data,error}=await db.from('fleet_trip_files').select('id,filename,size_bytes,created_at').eq('trip_id',trip.id).order('created_at',{ascending:false});check(error);return response({files:data});}
+  if(action==='driverFileUrl'){const {data:file,error:fe}=await db.from('fleet_trip_files').select('storage_path,filename').eq('id',str(b.file_id,50)).eq('trip_id',trip.id).maybeSingle();check(fe);if(!file)return response({error:'الملف غير متاح'},403);const {data,error}=await db.storage.from('fleet-trip-files').createSignedUrl(file.storage_path,60,b.download===true?{download:file.filename}:{});check(error);return response({url:data.signedUrl});}
   if(action==='driverInfo')return response({plate:trip.plate,company:company.name,destination:trip.destination,status:trip.status});
   if(!states.includes(b.status))throw new Error('حالة الرحلة غير صحيحة');if(typeof b.latitude!=='number'||!Number.isFinite(b.latitude)||Math.abs(b.latitude)>90||typeof b.longitude!=='number'||!Number.isFinite(b.longitude)||Math.abs(b.longitude)>180||typeof b.accuracy!=='number'||!Number.isFinite(b.accuracy)||b.accuracy<0)throw new Error('حدّد موقعك أولاً');
   const {data:recent}=await db.from('fleet_updates').select('created_at').eq('trip_id',trip.id).order('created_at',{ascending:false}).limit(1);if(recent?.length&&Date.now()-new Date(recent[0].created_at).getTime()<15000)return response({error:'تم استلام تحديث حديث؛ انتظر ١٥ ثانية'},429);
@@ -55,6 +64,7 @@ Deno.serve(async(req:Request)=>{
  // Company memberships have read-only access; driver updates are authenticated separately above.
  if(!root)return response({error:'للمدير العام فقط'},403);
  const can=async(cid:string)=>{if(!root&&member.company_id!==cid)throw new Error('لا تملك صلاحية لهذه الشركة');const {data:c}=await db.from('fleet_companies').select('*').eq('id',cid).maybeSingle();if(!c||(!root&&!c.active))throw new Error('الشركة غير متاحة');return c;};
+ const responsible=async(cid:string,id:unknown)=>{if(id==null||id==='')return null;const {data:m,error}=await db.from('fleet_memberships').select('user_id').eq('user_id',str(id,50)).eq('company_id',cid).eq('active',true).in('role',['company_admin','company_staff']).maybeSingle();check(error);if(!m)throw new Error('المسؤول غير متاح لهذه الشركة');return m.user_id;};
  if(action==='setAdminActive'){
   if(!member.is_owner)return response({error:'لمالك الموقع فقط'},403);
   if(typeof b.active!=='boolean')throw new Error('قيمة غير صحيحة');
@@ -79,6 +89,16 @@ Deno.serve(async(req:Request)=>{
   for(let start=0;start<filePaths.length;start+=100){try{const {error:e}=await db.storage.from('fleet-trip-files').remove(filePaths.slice(start,start+100));if(e)cleanupPending+=Math.min(100,filePaths.length-start);}catch{cleanupPending+=Math.min(100,filePaths.length-start);}}
   return response({ok:true,cleanup_pending:cleanupPending});
  }
+ if(action==='createCompanyMember'){
+  const cid=str(b.company_id,50);await can(cid);const un=username(b.username),pw=password(b.password);
+  if(!['company_admin','company_staff'].includes(b.role))throw new Error('قيمة غير صحيحة');
+  const account=await addUser(un,pw);try{const {error}=await db.from('fleet_memberships').insert({user_id:account.id,username:un,role:b.role,company_id:cid,active:true});check(error);return response({ok:true,username:un});}catch(e){await db.auth.admin.deleteUser(account.id);throw e;}
+ }
+ if(action==='setCompanyMemberActive'||action==='resetCompanyMemberPassword'){
+  const {data:target,error}=await db.from('fleet_memberships').select('*').eq('user_id',str(b.user_id,50)).eq('company_id',str(b.company_id,50)).in('role',['company_admin','company_staff']).maybeSingle();check(error);if(!target)throw new Error('الحساب غير موجود');
+  if(action==='setCompanyMemberActive'){if(typeof b.active!=='boolean')throw new Error('قيمة غير صحيحة');const {error}=await db.from('fleet_memberships').update({active:b.active}).eq('user_id',target.user_id);check(error);}
+  else{const {error}=await db.auth.admin.updateUserById(target.user_id,{password:password(b.password)});check(error);}return response({ok:true});
+ }
  if(action==='createAdmin'){
   const un=username(b.username),pw=password(b.password);const account=await addUser(un,pw);
   try{
@@ -91,11 +111,12 @@ Deno.serve(async(req:Request)=>{
   try{const {data:c,error}=await db.from('fleet_companies').insert({name}).select().single();check(error);cid=c.id;const {error:e}=await db.from('fleet_memberships').insert({user_id:account.id,username:un,role:'company_admin',company_id:cid});check(e);return response({ok:true,company:c,username:un});}catch(e){if(cid)await db.from('fleet_companies').delete().eq('id',cid);await db.auth.admin.deleteUser(account.id);throw e;}
  }
  if(action==='setCompanyActive'){if(!root)return response({error:'للمدير العام فقط'},403);if(typeof b.active!=='boolean')throw new Error('قيمة غير صحيحة');const {error}=await db.from('fleet_companies').update({active:b.active}).eq('id',str(b.company_id,50));check(error);return response({ok:true});}
- if(action==='resetCompanyPassword'){if(!root)return response({error:'للمدير العام فقط'},403);const {data:m}=await db.from('fleet_memberships').select('user_id').eq('company_id',str(b.company_id,50)).eq('role','company_admin').single();if(!m)throw new Error('الحساب غير موجود');const {error}=await db.auth.admin.updateUserById(m.user_id,{password:password(b.password)});check(error);return response({ok:true});}
+ if(action==='resetCompanyPassword'){if(!root)return response({error:'للمدير العام فقط'},403);const {data:m}=await db.from('fleet_memberships').select('user_id').eq('company_id',str(b.company_id,50)).eq('role','company_admin').order('user_id').limit(1).maybeSingle();if(!m)throw new Error('الحساب غير موجود');const {error}=await db.auth.admin.updateUserById(m.user_id,{password:password(b.password)});check(error);return response({ok:true});}
  if(action==='createTrip'){
-  const company=await can(str(b.company_id,50));if(!company.active)throw new Error('فعّل الشركة قبل إضافة رحلة');const {data,error}=await db.from('fleet_trips').insert({company_id:company.id,plate:str(b.plate,60),driver:String(b.driver||'').slice(0,100),phone:String(b.phone||'').slice(0,40),destination:String(b.destination||'').slice(0,140),declaration_no:String(b.declaration_no||'').slice(0,80)}).select().single();check(error);return response({ok:true,trip:data});
+  const company=await can(str(b.company_id,50));if(!company.active)throw new Error('فعّل الشركة قبل إضافة رحلة');const {data,error}=await db.from('fleet_trips').insert({company_id:company.id,assigned_member_id:await responsible(company.id,b.assigned_member_id),plate:str(b.plate,60),driver:String(b.driver||'').slice(0,100),phone:String(b.phone||'').slice(0,40),destination:String(b.destination||'').slice(0,140),declaration_no:String(b.declaration_no||'').slice(0,80)}).select().single();check(error);return response({ok:true,trip:data});
  }
  const {data:trip}=await db.from('fleet_trips').select('*').eq('id',str(b.trip_id,50)).maybeSingle();if(!trip)throw new Error('الرحلة غير موجودة');const company=await can(trip.company_id);
+ if(action==='assignCompanyMember'){const id=await responsible(trip.company_id,b.assigned_member_id);const {error}=await db.from('fleet_trips').update({assigned_member_id:id}).eq('id',trip.id);check(error);return response({ok:true});}
  if(action==='closeTrip'){const {error}=await db.from('fleet_trips').update({closed:true}).eq('id',trip.id);check(error);await db.from('fleet_driver_links').delete().eq('trip_id',trip.id);return response({ok:true});}
  if(trip.closed||!company.active)throw new Error('هذه الرحلة متوقفة');
  if(action==='driverAccountInfo'){
