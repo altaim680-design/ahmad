@@ -17,6 +17,8 @@ create table public.fleet_notifications(
 );
 create index fleet_notifications_user_idx on public.fleet_notifications(user_id,id desc);
 create index fleet_notifications_unread_idx on public.fleet_notifications(user_id,read_at,id desc);
+create index fleet_notifications_trip_idx on public.fleet_notifications(trip_id);
+create index fleet_notifications_message_idx on public.fleet_notifications(message_id);
 
 create table public.fleet_user_push_subscriptions(
  endpoint text primary key,
