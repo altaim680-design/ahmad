@@ -1,0 +1,24 @@
+.appearance-bar{max-width:1260px;margin:12px auto 0;padding:0 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.appearance-bar label{margin:0}.appearance-bar select{width:auto;min-width:110px}.appearance-bar button{font-size:14px}.connection-warning{max-width:1212px;margin:12px auto;padding:12px 18px;border-radius:12px;border:1px solid #c79a41;background:#fff4d9;color:#62420b;font-size:14px}.back-to-top{position:fixed;inset-inline-end:18px;bottom:24px;width:46px;height:46px;border-radius:50%;background:#087f73;color:#fff;box-shadow:0 5px 18px #0003;z-index:40;font-size:24px;padding:0}
+@media screen{
+html[data-appearance="dark"]{color-scheme:dark}html[data-appearance="light"]{color-scheme:light}
+html[data-appearance="dark"] #toast{background:#203f48;color:#ecf9f6;border-color:#65d8bd}
+
+html.large-text body{font-size:18px}html.large-text .trip small,html.large-text .muted,html.large-text .notice,html.large-text .section-head p,html.large-text .page-heading p,html.large-text .login-box p,html.large-text label,html.large-text .stats span,html.large-text th,html.large-text td{font-size:16px}html.large-text .trip button,html.large-text .company-card .actions button,html.large-text .tabs button{font-size:15px}
+html[data-appearance="dark"]{--ink:#e2eeed;--muted:#a6bcbf;--line:#344c52;--bg:#101d24;--teal:#65d8bd}
+html[data-appearance="dark"] body{background:radial-gradient(ellipse at 5% 0%,#1c3b40 0,transparent 50%),#101d24;color:#e2eeed}
+html[data-appearance="dark"] body>header{background:#102b34;border-bottom-color:#33515b}
+html[data-appearance="dark"] .login,html[data-appearance="dark"] .panel,html[data-appearance="dark"] .driver-wrap,html[data-appearance="dark"] dialog,html[data-appearance="dark"] .stats article,html[data-appearance="dark"] .trip,html[data-appearance="dark"] .company-card{background:#1b3038;border-color:#344c52;box-shadow:0 8px 25px #0002;color:#e2eeed}
+html[data-appearance="dark"] .login-box,html[data-appearance="dark"] .page-heading,html[data-appearance="dark"] #driverChooser{background:linear-gradient(135deg,#1c343d,#213f43);border-color:#3c555c}
+html[data-appearance="dark"] .tabs{background:#182c35;border-color:#3c555c}html[data-appearance="dark"] .tabs button{color:#bfd1d2}html[data-appearance="dark"] .tabs button.active{background:#65d8bd;color:#092c2b}html[data-appearance="dark"] .tabs button:not(.active):hover{background:#2a474e;color:#fff}
+html[data-appearance="dark"] input,html[data-appearance="dark"] select,html[data-appearance="dark"] textarea,html[data-appearance="dark"] #reportText{background:#12262f;color:#e2eeed;border-color:#486068}html[data-appearance="dark"] input::placeholder,html[data-appearance="dark"] textarea::placeholder{color:#a1b7bb;opacity:1}
+html[data-appearance="dark"] .primary,html[data-appearance="dark"] .back-to-top{background:#65d8bd;color:#0c2b2b}html[data-appearance="dark"] .primary:hover{background:#8ae6d0}html[data-appearance="dark"] .secondary{background:#2c4650;color:#e4f2f0;border-color:#4a626a}html[data-appearance="dark"] .secondary:hover{background:#385660}
+html[data-appearance="dark"] .danger{background:#4b2a32;color:#ffbab6}html[data-appearance="dark"] .error{color:#ffb3ae}html[data-appearance="dark"] .old{color:#f4c47c!important}
+html[data-appearance="dark"] .tag,html[data-appearance="dark"] .status,html[data-appearance="dark"] .notice,html[data-appearance="dark"] .barcode-search,html[data-appearance="dark"] .driver-shortcuts a{background:#203f40;color:#a6ecda;border-color:#3a625d}
+html[data-appearance="dark"] .stats .warn{background:#403a29;border-color:#806b40}html[data-appearance="dark"] .empty,html[data-appearance="dark"] .link-box,html[data-appearance="dark"] #driverFilesSection{background:#172a34;color:#bfd0d3;border-color:#3c555c}
+html[data-appearance="dark"] th{background:#29434c;color:#e3efef}html[data-appearance="dark"] tbody tr:nth-child(even){background:#213740}html[data-appearance="dark"] .developer-credit a{color:#7ce0c6}
+html[data-appearance="dark"] .connection-warning{background:#493c21;color:#ffe0a4;border-color:#a18a50}
+/* Keep the printed/scannable barcode black on white in both modes. */
+html[data-appearance="dark"] .barcode-label{background:#fff;color:#000}
+@media(max-width:750px){.appearance-bar{padding:0 14px;gap:8px}.appearance-bar label{font-size:13px}.appearance-bar select{font-size:14px;padding:8px}.appearance-bar button{padding:8px 12px}.connection-warning{margin:12px}.back-to-top{bottom:104px;inset-inline-end:12px}html.large-text .tabs button{font-size:12px}html.large-text .trip{grid-template-columns:1fr}html.large-text .trip .actions{grid-column:auto}}
+}
+@media print{.appearance-bar,.connection-warning,.back-to-top{display:none!important}html{color-scheme:light!important}body{color:#102d43!important}}
