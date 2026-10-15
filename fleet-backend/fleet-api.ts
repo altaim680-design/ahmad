@@ -82,11 +82,13 @@ Deno.serve(async(req:Request)=>{
   if(!c)throw new Error('الشركة غير متاحة');
   if(c.name!==name)throw new Error('اكتب اسم الشركة كما يظهر لتأكيد الحذف');
   const filePaths:string[]=[];for(let start=0;;start+=500){const {data:files,error:fe}=await db.from('fleet_trip_files').select('storage_path').eq('company_id',cid).order('id').range(start,start+499);check(fe);filePaths.push(...files.map((f:any)=>f.storage_path));if(files.length<500)break;}
+  const mediaPaths:string[]=[];const companyTrips:any[]=[];for(let start=0;;start+=500){const {data:batch,error:cte}=await db.from('fleet_trips').select('id').eq('company_id',cid).order('id').range(start,start+499);check(cte);companyTrips.push(...batch);if(batch.length<500)break;}for(const tr of companyTrips){for(let start=0;;start+=500){const {data:media,error:me}=await db.from('fleet_media').select('path').eq('trip_id',tr.id).order('id').range(start,start+499);check(me);mediaPaths.push(...media.map((m:any)=>m.path));if(media.length<500)break;}}
   const {data:ids,error}=await db.rpc('fleet_delete_company',{p_actor:user.id,p_company:cid,p_name:name});check(error);
   // Fleet data and permissions are removed atomically. Auth cleanup is best effort.
   let cleanupPending=0;
   for(const id of ids||[]){try{const {error:e}=await db.auth.admin.deleteUser(id);if(e)cleanupPending++;}catch{cleanupPending++;}}
   for(let start=0;start<filePaths.length;start+=100){try{const {error:e}=await db.storage.from('fleet-trip-files').remove(filePaths.slice(start,start+100));if(e)cleanupPending+=Math.min(100,filePaths.length-start);}catch{cleanupPending+=Math.min(100,filePaths.length-start);}}
+  for(let start=0;start<mediaPaths.length;start+=100){try{const {error:e}=await db.storage.from('fleet-conversations').remove(mediaPaths.slice(start,start+100));if(e)cleanupPending++;}catch{cleanupPending++;}}
   return response({ok:true,cleanup_pending:cleanupPending});
  }
  if(action==='createCompanyMember'){
