@@ -1,0 +1,64 @@
+
+/* Khotwati: calm surfaces and responsive navigation, October 2026. */
+@media screen{
+:root{--ink:#173c43;--muted:#5e7478;--line:#d9e5e2;--teal:#087f73;--bg:#f3f5f0}
+body{background:radial-gradient(ellipse at 5% 0%,#dceee8 0,transparent 48%),radial-gradient(ellipse at 95% 35%,#f4ecdb 0,transparent 45%),#f3f5f0;min-height:100vh}
+body>header{background:#153d43;border-bottom:1px solid #ffffff20;box-shadow:0 4px 20px #173c4312}
+.mark{background:#ffffff12;border:1px solid #ffffff25;border-radius:16px}
+button,.wa,input,select,textarea{border-radius:12px}
+button,.wa{min-height:44px;transition:background .18s,box-shadow .18s}
+.primary{background:#087f73;box-shadow:0 4px 10px #087f7318}.primary:hover{background:#066a60}.secondary:hover{background:#e0eeea}
+input,select,textarea{background:#fcfdfb;border-color:#cfddda}
+.login{box-shadow:0 20px 65px #173c4310;border-radius:28px;border-color:#ffffff;margin-block:48px}
+.login-art{background:radial-gradient(circle at 10% 10%,#397d77 0,transparent 58%),linear-gradient(145deg,#17474e,#102f38);position:relative}
+.login-art h1{letter-spacing:-1px}.login-box{background:linear-gradient(160deg,#fff,#f7faf6)}
+.login-features span{padding:12px 16px;border:1px solid #ffffff20;border-radius:12px;background:#ffffff06}
+#office{padding-top:28px}
+.page-heading{padding:25px 28px;border:1px solid #ffffff;border-radius:22px;background:linear-gradient(110deg,#fffefa,#e7f2ed);box-shadow:0 6px 24px #173c4306}
+.page-heading h1{font-size:30px;line-height:1.45}
+.tabs{position:sticky;top:12px;z-index:30;display:flex;gap:8px;background:#fff;border:1px solid var(--line);padding:8px;border-radius:18px;box-shadow:0 8px 30px #173c4310;margin-bottom:24px}
+.tabs button{display:flex;align-items:center;justify-content:center;gap:10px;flex:1;min-height:54px;color:#526c70;border-radius:12px;white-space:normal}
+.nav-icon{width:22px;height:22px;flex-shrink:0}
+.tabs button.active{background:#173f46;color:#fff;box-shadow:0 3px 8px #173c431a}
+.tabs button:not(.active):hover{background:#edf5f1;color:#173f46}
+.stats article{border-radius:18px;border-color:#fff;box-shadow:0 5px 20px #173c4306;border-inline-start:4px solid #b8d5cd}
+.stats article:nth-child(2){border-inline-start-color:#5e9fa3}.stats article:nth-child(3){border-inline-start-color:#63ae91}.stats .warn{border-inline-start-color:#d7a44f;background:#fff8e9}
+.panel{padding:26px;border:1px solid #e0e9e4;border-radius:22px;box-shadow:0 10px 30px #173c4305;scroll-margin-top:100px}
+.panel:not([hidden]){animation:panel-in .2s ease-out}
+#tripsPanel{background:#fbfdfb}#reportsPanel{background:linear-gradient(145deg,#fff,#f5f9f9)}#companiesPanel{background:linear-gradient(145deg,#fff,#fbf9f3)}
+.trip{background:#fff;border:1px solid #dfe9e4;border-radius:16px;padding:20px;margin-top:14px;gap:18px}
+.trip h3{font-size:20px}.trip button{min-height:38px}.trip .actions{gap:7px}
+.company-card{background:#fff;border:1px solid #e0e8e3;border-radius:16px;padding:20px;margin-top:12px}
+.barcode-search{padding:16px;background:#edf4ef;border:1px solid #dbe8e1;border-radius:16px;margin-bottom:20px}
+.barcode-search label{margin-top:0}.status,.tag{border-radius:8px}
+.section-head h2{font-size:22px}.section-head p{max-width:65ch}
+.table-wrap{border:1px solid var(--line);border-radius:14px;margin-top:18px}table{margin-top:0}th{background:#e9f2ee}
+tbody tr:nth-child(even){background:#f7faf7}
+dialog{border-radius:22px;box-shadow:0 25px 90px #09243533}dialog::backdrop{background:#102f387d}
+.driver-wrap{border-radius:22px;box-shadow:0 8px 30px #173c4308;background:#fffefa}
+#driverChooser{background:linear-gradient(135deg,#f9fdf9,#eaf4ef)}
+#driverFilesSection{margin-top:20px;padding:18px;background:#f0f5f7;border:1px solid #dce8eb;border-radius:16px;scroll-margin-top:20px}
+#driverFilesList article{padding:12px 0;border-bottom:1px solid var(--line)}#driverFilesList button{margin:4px}
+.driver-shortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.driver-shortcuts a{padding:9px 12px;background:#e9f3ee;color:#155c55;border:1px solid #cce1d7;border-radius:10px;font-size:14px;font-weight:bold}
+#driverTrackingSection,#driverManualSection{scroll-margin-top:20px}
+.notice{border-radius:12px}.developer-credit{padding-bottom:30px}
+@keyframes panel-in{from{opacity:.6;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:750px){
+body:has(#office:not([hidden])){padding-bottom:100px}
+#office{padding-inline:12px}
+.page-heading{padding:20px;gap:16px}.page-heading h1{font-size:25px}.page-heading>.actions{width:100%}.page-heading>.actions button{flex:1}
+#office>.tabs{position:fixed;top:auto;bottom:0;inset-inline:0;margin:0;border-radius:20px 20px 0 0;padding:8px 8px max(10px,env(safe-area-inset-bottom));gap:4px;border-bottom:0;box-shadow:0 -8px 30px #173c4312}
+.tabs button{flex-direction:column;gap:4px;min-height:60px;font-size:11px;padding:8px 5px;line-height:1.5}
+.nav-icon{width:22px;height:22px}
+.stats{gap:10px}.stats article{padding:14px}.stats strong{font-size:27px}
+.panel{padding:16px;border-radius:18px;scroll-margin-top:12px}.trip{padding:16px;grid-template-columns:1fr 1fr}.trip .actions{grid-column:1/-1;max-width:none}
+.trip .actions button{flex:1 1 135px;min-height:42px}
+.login{margin:22px 12px}.login-box{padding:26px}.login-art{padding:26px}
+#toast{bottom:105px}
+body:has(#office:not([hidden])) .install-card{bottom:100px}
+.driver-wrap{margin-inline:12px}#driverChooser{margin:16px 12px}#driverPage{padding:0 0 16px}
+body>header{gap:12px}.brand small{max-width:190px}#accountBar{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){.panel:not([hidden]){animation:none}button,.wa{transition:none}}
+}
