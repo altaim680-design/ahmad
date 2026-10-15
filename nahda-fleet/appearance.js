@@ -24,5 +24,6 @@
  const top=el('button','↑');top.type='button';top.className='back-to-top';top.setAttribute('aria-label',w[6]);top.title=w[6];top.hidden=true;document.body.append(top);
  const scroll=()=>{top.hidden=window.scrollY<450;};window.addEventListener('scroll',scroll,{passive:true});scroll();top.onclick=()=>window.scrollTo({top:0,behavior:'auto'});
  window.addEventListener('storage',e=>{if(e.key==='khotwati-appearance'){mode=['light','dark','system'].includes(e.newValue)?e.newValue:'system';select.value=mode;apply();}if(e.key==='khotwati-large-text'){large=e.newValue==='true';apply();fontLabel();}});
+ if(!document.querySelector('script[data-khotwati-notifications]')){const s=document.createElement('script');s.src='/notifications.js?v=20261016';s.dataset.khotwatiNotifications='1';document.head.append(s);}
  });
 })();
