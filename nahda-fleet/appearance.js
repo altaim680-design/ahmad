@@ -1,5 +1,15 @@
 'use strict';
 (()=>{
+ const SESSION_KEY='khotwati-driver-session';
+ let allowClearUntil=0;
+ const explicitSessionClear=()=>Date.now()<allowClearUntil||/غير مفعّل|موقوف|not active|disabled|deactivated|devre dışı|pasif/i.test(document.getElementById('loginError')?.textContent||'');
+ const allowSessionClear=()=>{allowClearUntil=Date.now()+8000;};
+ const originalFetch=window.fetch.bind(window);
+ window.fetch=(input,init)=>{try{const raw=typeof input==='string'?input:input?.url||'';if(raw.includes('/auth/v1/logout')&&!explicitSessionClear())return Promise.resolve(new Response('{}',{status:200,headers:{'Content-Type':'application/json'}}));}catch{}return originalFetch(input,init);};
+ try{const remove=Storage.prototype.removeItem;Storage.prototype.removeItem=function(key){if(this===localStorage&&key===SESSION_KEY&&!explicitSessionClear())return;return remove.call(this,key);};}catch{}
+ document.addEventListener('click',e=>{if(e.target.closest?.('#logout,#driverLogout,[data-explicit-logout]'))allowSessionClear();},{capture:true});
+ window.KhotwatiSessionGuard={allowSessionClear};
+
  const html=document.documentElement,media=window.matchMedia('(prefers-color-scheme: dark)');
  const read=(key,fallback)=>{try{return localStorage.getItem(key)||fallback;}catch{return fallback;}};
  const save=(key,value)=>{try{localStorage.setItem(key,value);}catch{}};
