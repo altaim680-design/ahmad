@@ -27,5 +27,6 @@
  const scroll=()=>{top.hidden=window.scrollY<450;};window.addEventListener('scroll',scroll,{passive:true});scroll();top.onclick=()=>window.scrollTo({top:0,behavior:'auto'});
  window.addEventListener('storage',e=>{if(e.key==='khotwati-appearance'){mode=['light','dark','system'].includes(e.newValue)?e.newValue:'system';select.value=mode;apply();}if(e.key==='khotwati-large-text'){large=e.newValue==='true';apply();fontLabel();}});
  if(!['/notifications.html','/enterprise.html'].includes(location.pathname)&&!document.querySelector('script[data-khotwati-notifications]')){const s=document.createElement('script');s.src='/notifications.js?v=2';s.dataset.khotwatiNotifications='1';document.head.append(s);}
+ if(location.pathname==='/driver.html'&&!document.querySelector('script[data-khotwati-driver-enterprise]')){const s=document.createElement('script');s.src='/driver-enterprise.js?v=1';s.dataset.khotwatiDriverEnterprise='1';document.head.append(s);}
  });
 })();
