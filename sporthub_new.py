@@ -22,7 +22,9 @@ app.config.update(
 )
 database_url = os.getenv("DATABASE_URL", "").strip()
 if database_url.startswith("postgres://"):
-    database_url = "postgresql://" + database_url[len("postgres://"):]
+    database_url = "postgresql+psycopg://" + database_url[len("postgres://"):]
+elif database_url.startswith("postgresql://"):
+    database_url = "postgresql+psycopg://" + database_url[len("postgresql://"):]
 DEMO = not bool(database_url)
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url or "sqlite:////tmp/sporthub-new-preview.sqlite3"
 db = SQLAlchemy(app)
