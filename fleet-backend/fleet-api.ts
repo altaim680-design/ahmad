@@ -12,7 +12,7 @@ Deno.serve(async(req:Request)=>{
  const allowed=!origin||origin==='https://nahda-syria-fleet.onrender.com';
  const headers={...cors,...(allowed&&origin?{'Access-Control-Allow-Origin':origin}:{})};
  let actor:string|null=null,action='',payload:any={};
- const auditActions=new Set(['createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const auditActions=new Set(['createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','deleteTrip','retryTripCleanup','closeTrip','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  const response=async(data:unknown,status=200)=>{
   if(actor&&auditActions.has(action)){
    const validId=(v:any)=>typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v)?v:null;
@@ -31,7 +31,7 @@ Deno.serve(async(req:Request)=>{
  let b:any;try{b=JSON.parse(new TextDecoder().decode(buffer));}catch{return response({error:'Invalid JSON'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b)||typeof b.action!=='string')return response({error:'Invalid request'},400);
  payload=b;action=b.action;
- const actions=new Set(['driverFiles','driverFileUrl','resolveAccount','driverInfo','driverUpdate','driverTrips','createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
+ const actions=new Set(['driverFiles','driverFileUrl','resolveAccount','driverInfo','driverUpdate','driverTrips','createCompanyMember','setCompanyMemberActive','resetCompanyMemberPassword','assignCompanyMember','setAdminActive','deleteCompany','createAdmin','createCompany','setCompanyActive','resetCompanyPassword','createTrip','deleteTrip','retryTripCleanup','closeTrip','driverAccountInfo','assignDriver','createDriver','resetDriverPassword','officeUpdate']);
  if(!actions.has(action))return response({error:'طلب غير معروف'},400);
  const bearer=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');if(!bearer)return response({error:'سجّل الدخول'},401);const {data:{user},error:ue}=await db.auth.getUser(bearer);if(ue||!user)return response({error:'انتهت الجلسة؛ سجّل الدخول مجدداً'},401);
  actor=user.id;const {data:withinLimit,error:rateError}=await db.rpc('fleet_rate_limit',{p_actor:user.id});if(rateError)return response({error:'تعذّر تنفيذ الطلب'},503);if(!withinLimit)return response({error:'محاولات كثيرة؛ انتظر قليلاً ثم أعد المحاولة'},429);
@@ -65,6 +65,18 @@ Deno.serve(async(req:Request)=>{
  if(!root)return response({error:'للمدير العام فقط'},403);
  const can=async(cid:string)=>{if(!root&&member.company_id!==cid)throw new Error('لا تملك صلاحية لهذه الشركة');const {data:c}=await db.from('fleet_companies').select('*').eq('id',cid).maybeSingle();if(!c||(!root&&!c.active))throw new Error('الشركة غير متاحة');return c;};
  const responsible=async(cid:string,id:unknown)=>{if(id==null||id==='')return null;const {data:m,error}=await db.from('fleet_memberships').select('user_id').eq('user_id',str(id,50)).eq('company_id',cid).eq('active',true).in('role',['company_admin','company_staff']).maybeSingle();check(error);if(!m)throw new Error('المسؤول غير متاح لهذه الشركة');return m.user_id;};
+ if(action==='deleteTrip'||action==='retryTripCleanup'){
+  const tid=str(b.trip_id,50);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tid))throw new Error('رقم الرحلة غير صحيح');
+  if(action==='deleteTrip'){const {error}=await db.rpc('fleet_delete_trip',{p_actor:user.id,p_trip:tid,p_plate:str(b.confirm_plate,60)});check(error);}
+  // A failed storage removal remains queued and can be retried after the trip is gone.
+  let cleanupPending=0;
+  for(const bucket of ['fleet-trip-files','fleet-conversations','fleet-pod']){
+   const {data:jobs,error}=await db.from('fleet_trip_file_cleanup').select('id,path').eq('trip_id',tid).eq('bucket',bucket).order('id').limit(500);if(error){cleanupPending++;continue;}
+   for(let i=0;i<(jobs||[]).length;i+=100){const batch=jobs.slice(i,i+100);try{const {error:se}=await db.storage.from(bucket).remove(batch.map((j:any)=>j.path));if(se)continue;const {error:qe}=await db.from('fleet_trip_file_cleanup').delete().in('id',batch.map((j:any)=>j.id));if(qe)console.error('Trip cleanup queue update failed',qe.code);}catch{}}
+  }
+  const {count,error:ce}=await db.from('fleet_trip_file_cleanup').select('id',{count:'exact',head:true}).eq('trip_id',tid);cleanupPending=ce?Math.max(1,cleanupPending):(count||0);
+  return response({ok:true,cleanup_pending:cleanupPending});
+ }
  if(action==='setAdminActive'){
   if(!member.is_owner)return response({error:'لمالك الموقع فقط'},403);
   if(typeof b.active!=='boolean')throw new Error('قيمة غير صحيحة');
