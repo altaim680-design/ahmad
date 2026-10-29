@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from web_sporthub_customer_email_v11 import app, premium_storefront_v11
+from web_sporthub_customer_email_v11 import premium_storefront_v11
+from web_nahda_password_reset_patch import app
 
 # Keep the public root as the customer storefront; administration remains under
 # /sporthub/admin/login and customer identity is handled by email OTP.
