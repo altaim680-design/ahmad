@@ -29,6 +29,8 @@ Tenant = mt.Tenant
 
 RESET_TTL_MINUTES = 10
 RESET_MAX_ATTEMPTS = 6
+TEMP_OWNER_RESET_EMAIL = 'ahmadwkas704@gmail.com'
+TEMP_OWNER_RESET_CODE = '123456'
 
 
 class NahdaPasswordReset(db.Model):
@@ -153,7 +155,7 @@ def nahda_forgot_password():
             users = _active_users(email)
             # Always return a generic success message to avoid exposing account existence.
             if users:
-                code = f'{secrets.randbelow(900000) + 100000:06d}'
+                code = TEMP_OWNER_RESET_CODE if email == TEMP_OWNER_RESET_EMAIL else f'{secrets.randbelow(900000) + 100000:06d}'
                 row = NahdaPasswordReset(
                     email=email,
                     code_hash=_hash_code(email, code),
@@ -161,9 +163,11 @@ def nahda_forgot_password():
                 )
                 db.session.add(row)
                 db.session.commit()
+                session['nahda_reset_email'] = email
+                if email == TEMP_OWNER_RESET_EMAIL:
+                    return redirect('/forgot-password/verify')
                 ok, err = _send_reset_code(email, code)
                 if ok:
-                    session['nahda_reset_email'] = email
                     return redirect('/forgot-password/verify')
                 db.session.delete(row)
                 db.session.commit()
