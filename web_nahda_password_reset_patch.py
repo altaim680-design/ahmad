@@ -16,11 +16,13 @@ from datetime import datetime, timedelta
 from flask import request, session, redirect, render_template_string, flash
 from werkzeug.security import generate_password_hash
 
-import web_sporthub_customer_email_v11 as base
+import ssl
+import smtplib
+from email.message import EmailMessage
 import web_email_tenant_patch as emailbase
 import web_multitenant_patch as mt
 
-app = base.app
+app = emailbase.app
 db = mt.db
 User = mt.User
 Tenant = mt.Tenant
@@ -73,19 +75,58 @@ def _active_users(email):
     return result
 
 
+def _smtp_config():
+    user = (os.environ.get('NAHDA_SMTP_USER') or os.environ.get('SMTP_USER') or '').strip()
+    password = os.environ.get('NAHDA_SMTP_PASS') or os.environ.get('SMTP_PASS') or ''
+    host = (os.environ.get('NAHDA_SMTP_HOST') or os.environ.get('SMTP_HOST') or '').strip()
+    if not host and user.lower().endswith('@gmail.com'):
+        host = 'smtp.gmail.com'
+    try:
+        port = int(os.environ.get('NAHDA_SMTP_PORT') or os.environ.get('SMTP_PORT') or '587')
+    except Exception:
+        port = 587
+    from_addr = (os.environ.get('NAHDA_SMTP_FROM') or os.environ.get('SMTP_FROM') or user).strip()
+    use_ssl = (os.environ.get('NAHDA_SMTP_SSL') or '').strip().lower() in ('1','true','yes') or port == 465
+    return host, port, user, password, from_addr, use_ssl
+
+
+def _email_ready():
+    host, port, user, password, from_addr, use_ssl = _smtp_config()
+    return bool(host and from_addr and (not user or password))
+
+
 def _send_reset_code(email, code):
-    html = f"""<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;max-width:540px;margin:auto;padding:28px">
+    if not _email_ready():
+        return False, 'خدمة إرسال البريد غير مربوطة بالسيرفر بعد.'
+    host, port, user, password, from_addr, use_ssl = _smtp_config()
+    msg = EmailMessage()
+    msg['Subject'] = 'كود إعادة تعيين كلمة المرور - نهضة سوريا'
+    msg['From'] = f'نهضة سوريا <{from_addr}>'
+    msg['To'] = email
+    msg.set_content(f'كود إعادة تعيين كلمة المرور: {code}\nصالح لمدة {RESET_TTL_MINUTES} دقائق.')
+    msg.add_alternative(f"""<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;max-width:540px;margin:auto;padding:28px">
     <h2 style="color:#0f766e">نهضة سوريا</h2>
     <p>تم طلب إعادة تعيين كلمة المرور لحسابك.</p>
     <div style="font-size:34px;font-weight:900;letter-spacing:8px;background:#eef8f7;padding:20px;text-align:center;border-radius:14px">{code}</div>
     <p style="color:#64748b">الكود صالح لمدة {RESET_TTL_MINUTES} دقائق. إذا لم تطلب التغيير تجاهل الرسالة.</p>
-    </div>"""
-    return base._send_email(
-        email,
-        'كود إعادة تعيين كلمة المرور - نهضة سوريا',
-        f'كود إعادة تعيين كلمة المرور: {code}\nصالح لمدة {RESET_TTL_MINUTES} دقائق.',
-        html,
-    )
+    </div>""", subtype='html')
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, timeout=15, context=ssl.create_default_context()) as s:
+                if user: s.login(user, password)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as s:
+                s.ehlo()
+                try:
+                    s.starttls(context=ssl.create_default_context()); s.ehlo()
+                except Exception:
+                    pass
+                if user: s.login(user, password)
+                s.send_message(msg)
+        return True, ''
+    except Exception:
+        return False, 'تعذر إرسال كود الاستعادة حالياً.'
 
 
 STYLE = r"""
@@ -201,5 +242,5 @@ def nahda_password_reset_health():
     return {
         'ok': True,
         'feature': 'nahda_password_reset',
-        'email_ready': bool(base._email_ready()),
+        'email_ready': bool(_email_ready()),
     }
