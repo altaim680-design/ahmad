@@ -44,7 +44,7 @@ ENTITY = {
     'declaration': (CustomsDeclaration, 'البيان', 'declarations'),
     'trip': (TransportJob, 'الرحلة', 'trips'),
     'internal': (InternalShipment, 'البيان الداخلي', 'internal_shipments'),
-    'case': (ServiceCase, 'المعاملة', 'cases'),
+    'case': (ServiceCase, 'المعاملة', '/cases'),
     'invoice': (SalesInvoice, 'الفاتورة', 'invoices'),
     'cash': (CashTransaction, 'حركة الصندوق', 'cash'),
     'expense': (Expense, 'المصروف', 'expenses'),
@@ -105,8 +105,20 @@ def _allowed(entity):
     if entity in ('cash','expense','invoice'): return session.get('role') in ('admin','accountant')
     return core.can_edit()
 def _go(endpoint):
+    if isinstance(endpoint,str) and endpoint.startswith('/'):
+        return redirect(endpoint)
     try: return redirect(url_for(endpoint))
     except Exception: return redirect('/')
+
+def _back_url(entity, endpoint):
+    if entity == 'case':
+        return '/cases'
+    if isinstance(endpoint,str) and endpoint.startswith('/'):
+        return endpoint
+    try:
+        return url_for(endpoint)
+    except Exception:
+        return '/'
 def _label_for_obj(obj):
     for attr in ('name','declaration_no','manifest_no','invoice_no','title','username','original_name','description'):
         v=getattr(obj,attr,None)
@@ -183,7 +195,7 @@ def crud_edit(entity,rid):
         if item['options']:item['kind']='select'
         meta.append(item)
     body='''<div class="page-head"><div><h1>تعديل {{title}}</h1><p class="muted">السجل رقم #{{obj.id}} — {{label}}</p></div></div><form method="post" class="card form-grid">{% for f in fields %}<label>{{f.label}}{% if f.kind == 'select' %}<select name="{{f.name}}"><option value="">—</option>{% for oid,txt in f.options %}<option value="{{oid}}" {% if (f.value|string)==(oid|string) %}selected{% endif %}>{{txt}}</option>{% endfor %}</select>{% elif f.kind == 'bool' %}<select name="{{f.name}}"><option value="1" {% if f.value %}selected{% endif %}>نعم</option><option value="0" {% if not f.value %}selected{% endif %}>لا</option></select>{% elif f.kind == 'textarea' %}<textarea name="{{f.name}}" rows="3">{{f.value}}</textarea>{% else %}<input name="{{f.name}}" type="{{f.kind}}" value="{{f.value}}" {% if f.kind=='number' %}step="any"{% endif %}>{% endif %}</label>{% endfor %}{% if entity == 'user' %}<label>كلمة مرور جديدة <input type="password" name="new_password" placeholder="اتركها فارغة بدون تغيير"></label>{% endif %}<div class="toolbar" style="grid-column:1/-1"><button class="btn green" type="submit">حفظ التعديل</button><a class="btn gray" href="{{back}}">رجوع</a></div></form>'''
-    return core.layout('تعديل '+title,body,title=title,obj=obj,label=_label_for_obj(obj),fields=meta,entity=entity,back=url_for(back_ep))
+    return core.layout('تعديل '+title,body,title=title,obj=obj,label=_label_for_obj(obj),fields=meta,entity=entity,back=_back_url(entity,back_ep))
 
 def _delete_generic_rows(model,**filters):
     try:model.query.filter_by(**filters).delete(synchronize_session=False)
