@@ -306,7 +306,7 @@ def _passkey_layout(page_title, body, **ctx):
     html = _previous_layout(page_title, body, **ctx)
     if session.get('uid') and 'data-passkey-link="1"' not in html and '</body>' in html:
         href = url_for('passkey_setup')
-        floating = f'<a data-passkey-link="1" href="{href}" title="الدخول بالبصمة" style="position:fixed;left:16px;bottom:16px;z-index:9998;background:#0f766e;color:#fff;text-decoration:none;padding:10px 13px;border-radius:999px;font:700 13px Tahoma,Arial;box-shadow:0 8px 24px #0003">🔐 بصمة الدخول</a>'
+        floating = f'<a class="no-print" data-passkey-link="1" href="{href}" title="الدخول بالبصمة" style="position:fixed;left:16px;bottom:16px;z-index:9998;background:#0f766e;color:#fff;text-decoration:none;padding:10px 13px;border-radius:999px;font:700 13px Tahoma,Arial;box-shadow:0 8px 24px #0003">🔐 بصمة الدخول</a>'
         html = html.replace('</body>', floating + '</body>', 1)
     return html
 
