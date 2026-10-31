@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_nahda_password_reset_patch import app
+from web_customer_statement_patch import app
 from web_sporthub_customer_email_v11 import premium_storefront_v11
 
 try:
