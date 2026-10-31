@@ -2,6 +2,13 @@
 from web_nahda_password_reset_patch import app
 from web_sporthub_customer_email_v11 import premium_storefront_v11
 
+try:
+    from sqlalchemy.engine import make_url as _make_url
+    _dbu = _make_url(app.config.get('SQLALCHEMY_DATABASE_URI',''))
+    print(f"DB_TARGET host={_dbu.host} port={_dbu.port} database={_dbu.database} user={_dbu.username}", flush=True)
+except Exception as _e:
+    print(f"DB_TARGET unavailable={type(_e).__name__}", flush=True)
+
 # Keep the public root as the customer storefront; administration remains under
 # /sporthub/admin/login and customer identity is handled by email OTP.
 app.view_functions['sporthub_home'] = premium_storefront_v11
