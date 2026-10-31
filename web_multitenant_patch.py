@@ -107,7 +107,16 @@ with app.app_context():
     for model in SCOPED_MODELS:
         _ensure_db_column(model, 'tenant_id', 'INTEGER')
     _ensure_db_column(User, 'login_name', 'VARCHAR(80)')
-    _ensure_db_column(User, 'system_owner', 'INTEGER DEFAULT 0')
+    _dialect = db.engine.dialect.name
+    _ensure_db_column(User, 'system_owner', 'BOOLEAN DEFAULT FALSE' if _dialect == 'postgresql' else 'INTEGER DEFAULT 0')
+    if _dialect == 'postgresql':
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE "user" ALTER COLUMN system_owner DROP DEFAULT'))
+                conn.execute(text('ALTER TABLE "user" ALTER COLUMN system_owner TYPE BOOLEAN USING (system_owner <> 0)'))
+                conn.execute(text('ALTER TABLE "user" ALTER COLUMN system_owner SET DEFAULT FALSE'))
+        except Exception:
+            pass
 
     with db.engine.begin() as conn:
         for model in SCOPED_MODELS:
