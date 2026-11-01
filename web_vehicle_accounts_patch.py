@@ -19,7 +19,8 @@ db = statement_module.db
 core = statement_module.core
 Company = core.Company
 
-VALID_CURRENCIES = ('USD', 'SYP', 'TRY')
+# USD only until the existing customer/cash ledger supports explicit FX accounting.
+VALID_CURRENCIES = ('USD',)
 ROLE_VIEW = ('admin', 'accountant', 'transport', 'collector')
 ROLE_WRITE = ('admin', 'accountant', 'transport')
 ROLE_PAYMENT = ('admin', 'accountant')
