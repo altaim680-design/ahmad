@@ -19,7 +19,8 @@ db = statement_module.db
 core = statement_module.core
 Company = core.Company
 
-VALID_CURRENCIES = ('USD', 'SYP', 'TRY')
+# Only USD may be posted to the existing single-currency general ledger.
+VALID_CURRENCIES = ('USD',)
 ROLE_VIEW = ('admin', 'accountant', 'transport', 'collector')
 ROLE_WRITE = ('admin', 'accountant', 'transport')
 ROLE_PAYMENT = ('admin', 'accountant')
