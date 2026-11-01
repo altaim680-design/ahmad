@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from web_customer_statement_patch import app
+from web_vehicle_accounts_patch import app
 from web_sporthub_customer_email_v11 import premium_storefront_v11
 import web_vehicle_accounts_patch  # additive vehicle payables, manual offsets only
 
