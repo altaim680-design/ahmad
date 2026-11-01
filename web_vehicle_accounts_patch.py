@@ -22,6 +22,7 @@ Company = core.Company
 VALID_CURRENCIES = ('USD', 'SYP', 'TRY')
 ROLE_VIEW = ('admin', 'accountant', 'transport', 'collector')
 ROLE_WRITE = ('admin', 'accountant', 'transport')
+ROLE_PAYMENT = ('admin', 'accountant')
 ROLE_OFFSET = ('admin', 'accountant')
 
 
@@ -114,6 +115,31 @@ def _vehicle_due(conn, tenant_id, company_id, currency):
         FROM public.v3_company_vehicle_balances
         WHERE tenant_id=:tid AND company_id=:cid AND currency=:cur
     """), {'tid': tenant_id, 'cid': company_id, 'cur': currency}).scalar() or 0))
+
+
+def _journal(conn, tid, day, description, ref_type, ref_id, debit_code, credit_code, amount):
+    accounts = conn.execute(text("""
+        SELECT code,id FROM public.v3_accounts
+        WHERE code IN (:debit,:credit) AND active IS DISTINCT FROM FALSE
+    """), {'debit':debit_code,'credit':credit_code}).mappings().all()
+    codes = {row['code']:row['id'] for row in accounts}
+    if debit_code not in codes or credit_code not in codes:
+        abort(409, description='حساب اليومية المطلوب غير موجود')
+    jid = conn.execute(text("""
+        INSERT INTO public.v3_journal_entries
+        (entry_date,description,ref_type,ref_id,posted,created_at,tenant_id)
+        VALUES(:day,:desc,:ref_type,:ref_id,true,now(),:tid) RETURNING id
+    """), {'day':day.isoformat(),'desc':description,'ref_type':ref_type,
+          'ref_id':ref_id,'tid':tid}).scalar_one()
+    conn.execute(text("""
+        INSERT INTO public.v3_journal_lines
+        (entry_id,account_id,debit,credit,note,tenant_id)
+        VALUES (:jid,:debit_account,:amount,0,:note,:tid),
+               (:jid,:credit_account,0,:amount,:note,:tid)
+    """), {'jid':jid,'debit_account':codes[debit_code],
+          'credit_account':codes[credit_code],'amount':amount,
+          'note':description,'tid':tid})
+    return jid
 
 
 def _redirect(company_id, currency='USD'):
@@ -239,7 +265,7 @@ def nahda_vehicle_accounts():
       </form>
       {% else %}<p>صلاحية عرض فقط.</p>{% endif %}
     </div>
-    {% if can_write %}
+    {% if can_payment %}
     <div class="card no-print">
       <div class="section-title">تسديد مستحقات سيارات الشركة</div>
       <p>الدفع من صندوق الدولار فقط حالياً، ويُسجل صرفاً مستقلاً عن حساب العملاء.</p>
@@ -294,6 +320,7 @@ def nahda_vehicle_accounts():
         currency=currency, currencies=VALID_CURRENCIES, csrf=_csrf(),
         request_id=str(uuid.uuid4()), today=date.today().isoformat(),
         can_write=session.get('role') in ROLE_WRITE,
+        can_payment=session.get('role') in ROLE_PAYMENT,
         can_offset=session.get('role') in ROLE_OFFSET,
         kinds={'trip':'أجرة نقلة','payment':'سداد من الصندوق',
                'manual_offset':'مقاصة يدوية','offset_reversal':'عكس مقاصة'}
@@ -320,12 +347,13 @@ def nahda_vehicle_trip():
         abort(400)
     amount = _amount(request.form.get('amount'))
     with db.engine.begin() as conn:
-        _company(conn, tid, cid)
-        conn.execute(text("""
+        company = _company(conn, tid, cid)
+        job_id = conn.execute(text("""
           INSERT INTO public.v3_company_vehicle_jobs
           (tenant_id,company_id,trip_date,vehicle_no,driver_name,from_location,to_location,
            declaration_no,amount,currency,created_by)
           VALUES (:tid,:cid,:day,:vehicle,:driver,:src,:dst,:dec,:amount,:cur,:actor)
+          RETURNING id
         """), {
             'tid':tid,'cid':cid,'day':day,'vehicle':vehicle,
             'driver':(request.form.get('driver_name') or '')[:120],
@@ -333,14 +361,16 @@ def nahda_vehicle_trip():
             'dst':(request.form.get('to_location') or '')[:200],
             'dec':(request.form.get('declaration_no') or '')[:120],
             'amount':amount,'cur':cur,'actor':actor
-        })
+        }).scalar_one()
+        _journal(conn, tid, day, 'أجرة سيارة '+vehicle+' لشركة '+str(company['name']),
+                 'company_vehicle_trip', job_id, '5020', '2000', amount)
     flash('تمت إضافة أجرة السيارة إلى حساب الشركة المستقل.', 'success')
     return _redirect(cid, cur)
 
 
 @app.route('/vehicle-accounts/payments', methods=['POST'])
 def nahda_vehicle_payment():
-    tid, actor, cid, cur = _form_base(ROLE_WRITE)
+    tid, actor, cid, cur = _form_base(ROLE_PAYMENT)
     if cur != 'USD':
         abort(400, description='صندوق العملات الأخرى غير مدعوم حالياً')
     day = _day(request.form.get('date'))
@@ -360,13 +390,16 @@ def nahda_vehicle_payment():
         """), {'day':day.isoformat(),'amount':amount,
               'description':'تسديد أجور سيارات - '+str(company['name']),
               'ref':reference,'actor':actor,'tid':tid}).scalar_one()
-        conn.execute(text("""
+        payment_id = conn.execute(text("""
           INSERT INTO public.v3_company_vehicle_payments
           (tenant_id,company_id,payment_date,amount,currency,payment_method,
            cash_transaction_id,reference_no,created_by)
           VALUES(:tid,:cid,:day,:amount,'USD','cash',:cash,:ref,:actor)
+          RETURNING id
         """), {'tid':tid,'cid':cid,'day':day,'amount':amount,
-              'cash':cash_id,'ref':reference,'actor':actor})
+              'cash':cash_id,'ref':reference,'actor':actor}).scalar_one()
+        _journal(conn, tid, day, 'سداد أجور سيارات '+str(company['name']),
+                 'company_vehicle_payment', payment_id, '2000', '1000', amount)
     flash('تم تسجيل سداد أجور السيارات من الصندوق، دون تغيير حساب العميل.', 'success')
     return _redirect(cid, cur)
 
@@ -398,37 +431,21 @@ def nahda_vehicle_offset():
             return _redirect(cid, cur)
         if amount > _vehicle_due(conn, tid, cid, cur) or amount > _receivable(conn, tid, cid, cur):
             abort(409, description='المقاصة تتجاوز أحد الرصيدين المتاحين')
-        # Balanced, posted Dr supplier payable 2000 / Cr customer receivable 1100.
-        accs = conn.execute(text("""
-          SELECT code,id FROM public.v3_accounts WHERE code IN ('2000','1100') AND active IS DISTINCT FROM FALSE
-        """)).mappings().all()
-        ids = {r['code']:r['id'] for r in accs}
-        if '2000' not in ids or '1100' not in ids:
-            abort(409, description='حسابات اليومية اللازمة غير موجودة')
-        jid = conn.execute(text("""
-          INSERT INTO public.v3_journal_entries
-            (entry_date,description,ref_type,posted,created_at,tenant_id)
-          VALUES (:day,:description,'company_vehicle_offset',true,now(),:tid)
-          RETURNING id
-        """), {'day':day.isoformat(),'description':
-              'مقاصة سيارات يدوية مع '+str(company['name'])+'، بواسطة '+actor,
-              'tid':tid}).scalar_one()
-        conn.execute(text("""
-          INSERT INTO public.v3_journal_lines
-          (entry_id,account_id,debit,credit,note,tenant_id)
-          VALUES (:jid,:supplier,:amount,0,:note,:tid),
-                 (:jid,:customer,0,:amount,:note,:tid)
-        """), {'jid':jid,'supplier':ids['2000'],'customer':ids['1100'],
-              'amount':amount,'note':'مقاصة سيارات يدوية، شركة '+str(company['name']),
-              'tid':tid})
-        conn.execute(text("""
+        # Balanced posting in the same SQL transaction, never automatically.
+        jid = _journal(conn, tid, day,
+                        'مقاصة سيارات يدوية مع '+str(company['name'])+'، بواسطة '+actor,
+                        'company_vehicle_offset', None, '2000', '1100', amount)
+        offset_id = conn.execute(text("""
           INSERT INTO public.v3_company_vehicle_offsets
           (tenant_id,company_id,offset_date,amount,currency,
            journal_entry_id,reason,confirmed_by,idempotency_key)
           VALUES(:tid,:cid,:day,:amount,'USD',:jid,:reason,:actor,:token)
+          RETURNING id
         """), {'tid':tid,'cid':cid,'day':day,'amount':amount,'jid':jid,
               'reason':(request.form.get('reason') or '')[:500],
-              'actor':actor,'token':token})
+              'actor':actor,'token':token}).scalar_one()
+        conn.execute(text("UPDATE public.v3_journal_entries SET ref_id=:oid WHERE id=:jid"),
+                     {'oid':offset_id,'jid':jid})
     flash('تم اعتماد المقاصة اليدوية وتسجيل قيد اليومية دون حذف أي حركة.', 'success')
     return _redirect(cid, cur)
 
