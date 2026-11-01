@@ -252,7 +252,7 @@ def nahda_vehicle_accounts():
     <div class="card no-print">
       <div class="section-title">تسجيل سيارة عملت لنا</div>
       {% if can_write %}
-      <form method="post" action="{{url_for('nahda_vehicle_trip')}}" class="formgrid">
+      <form id="company-vehicle-trip-form" method="post" action="{{url_for('nahda_vehicle_trip')}}" class="formgrid" onsubmit="this.setAttribute('method','POST')">
         <input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="company_id" value="{{selected.id}}">
         <input type="hidden" name="currency" value="{{currency}}">
         <div class="field"><label>التاريخ</label><input type="date" name="date" value="{{today}}" required></div>
@@ -262,7 +262,7 @@ def nahda_vehicle_accounts():
         <div class="field"><label>إلى</label><input name="to_location" maxlength="200"></div>
         <div class="field"><label>رقم البيان</label><input name="declaration_no" maxlength="120"></div>
         <div class="field"><label>الأجرة ({{currency}})</label><input type="number" step=".01" min=".01" name="amount" required></div>
-        <div class="field" style="align-self:end"><button class="btn green">+ حفظ نقلة السيارة</button></div>
+        <div class="field" style="align-self:end"><button class="btn green" type="submit" form="company-vehicle-trip-form" formmethod="post" formaction="{{url_for('nahda_vehicle_trip')}}">+ حفظ نقلة السيارة</button></div>
       </form>
       {% else %}<p>صلاحية عرض فقط.</p>{% endif %}
     </div>
@@ -271,12 +271,12 @@ def nahda_vehicle_accounts():
       <div class="section-title">تسديد مستحقات سيارات الشركة</div>
       <p>الدفع من صندوق الدولار فقط حالياً، ويُسجل صرفاً مستقلاً عن حساب العملاء.</p>
       {% if currency=='USD' %}
-      <form method="post" action="{{url_for('nahda_vehicle_payment')}}" class="formgrid">
+      <form id="company-vehicle-payment-form" method="post" action="{{url_for('nahda_vehicle_payment')}}" class="formgrid" onsubmit="this.setAttribute('method','POST')">
         <input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="company_id" value="{{selected.id}}">
         <input type="hidden" name="currency" value="USD">
         <div class="field"><label>التاريخ</label><input type="date" name="date" value="{{today}}" required></div>
         <div class="field"><label>المبلغ بالدولار</label><input type="number" step=".01" min=".01" max="{{due}}" name="amount" required></div>
-        <div class="field" style="align-self:end"><button class="btn dark" {% if due<=0 %}disabled{% endif %}>تسديد من الصندوق</button></div>
+        <div class="field" style="align-self:end"><button class="btn dark" type="submit" form="company-vehicle-payment-form" formmethod="post" formaction="{{url_for('nahda_vehicle_payment')}}" {% if due<=0 %}disabled{% endif %}>تسديد من الصندوق</button></div>
       </form>
       {% else %}<p>تسجيل السداد النقدي بغير الدولار مؤجل لحين تفعيل حساب صندوق خاص بهذه العملة.</p>{% endif %}
     </div>
@@ -287,14 +287,14 @@ def nahda_vehicle_accounts():
       <p>تخصم من ذمة الشركة ومن حساب السيارات معاً بقيد محاسبي متوازن.
          لا تقبل المقاصة إلا بالدولار لأن حساب العملاء الحالي بالدولار.</p>
       {% if currency=='USD' %}
-      <form method="post" action="{{url_for('nahda_vehicle_offset')}}" class="formgrid">
+      <form id="company-vehicle-offset-form" method="post" action="{{url_for('nahda_vehicle_offset')}}" class="formgrid" onsubmit="this.setAttribute('method','POST')">
         <input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="company_id" value="{{selected.id}}">
         <input type="hidden" name="currency" value="USD"><input type="hidden" name="request_id" value="{{request_id}}">
         <div class="field"><label>التاريخ</label><input type="date" name="date" value="{{today}}" required></div>
         <div class="field"><label>قيمة المقاصة</label><input type="number" name="amount" step=".01" min=".01" max="{{max_offset}}" required></div>
         <div class="field"><label>سبب المقاصة</label><input name="reason" maxlength="500"></div>
         <div class="field"><label>التأكيد اليدوي</label><label><input type="checkbox" name="confirm" value="yes" required> أوافق على إجراء المقاصة الآن</label></div>
-        <div class="field" style="align-self:end"><button class="btn amber" {% if max_offset<=0 %}disabled{% endif %}>تأكيد المقاصة يدوياً</button></div>
+        <div class="field" style="align-self:end"><button class="btn amber" type="submit" form="company-vehicle-offset-form" formmethod="post" formaction="{{url_for('nahda_vehicle_offset')}}" {% if max_offset<=0 %}disabled{% endif %}>تأكيد المقاصة يدوياً</button></div>
       </form>
       {% endif %}
     </div>
@@ -339,8 +339,11 @@ def _form_base(roles):
     return tenant, actor, cid, cur
 
 
-@app.route('/vehicle-accounts/trips', methods=['POST'])
+@app.route('/vehicle-accounts/trips', methods=['GET', 'POST'])
 def nahda_vehicle_trip():
+    if request.method == 'GET':
+        flash('للحفظ افتح نموذج حسابات السيارات واضغط زر الحفظ؛ لم يتم تسجيل أي حركة من هذا الرابط المباشر.', 'error')
+        return redirect(url_for('nahda_vehicle_accounts'))
     tid, actor, cid, cur = _form_base(ROLE_WRITE)
     day = _day(request.form.get('date'))
     vehicle = (request.form.get('vehicle_no') or '').strip()[:100]
@@ -369,8 +372,11 @@ def nahda_vehicle_trip():
     return _redirect(cid, cur)
 
 
-@app.route('/vehicle-accounts/payments', methods=['POST'])
+@app.route('/vehicle-accounts/payments', methods=['GET', 'POST'])
 def nahda_vehicle_payment():
+    if request.method == 'GET':
+        flash('للحفظ افتح نموذج حسابات السيارات واضغط زر الحفظ؛ لم يتم تسجيل أي حركة من هذا الرابط المباشر.', 'error')
+        return redirect(url_for('nahda_vehicle_accounts'))
     tid, actor, cid, cur = _form_base(ROLE_PAYMENT)
     if cur != 'USD':
         abort(400, description='صندوق العملات الأخرى غير مدعوم حالياً')
@@ -405,8 +411,11 @@ def nahda_vehicle_payment():
     return _redirect(cid, cur)
 
 
-@app.route('/vehicle-accounts/offsets', methods=['POST'])
+@app.route('/vehicle-accounts/offsets', methods=['GET', 'POST'])
 def nahda_vehicle_offset():
+    if request.method == 'GET':
+        flash('للحفظ افتح نموذج حسابات السيارات واضغط زر الحفظ؛ لم يتم تسجيل أي حركة من هذا الرابط المباشر.', 'error')
+        return redirect(url_for('nahda_vehicle_accounts'))
     tid, actor, cid, cur = _form_base(ROLE_OFFSET)
     if cur != 'USD':
         abort(400, description='المقاصة متاحة للدولار فقط في نظام الذمم الحالي')
