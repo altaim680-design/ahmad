@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from web_customer_statement_patch import app
 import web_vehicle_accounts_patch  # register Flask routes before other import-time requests
+import web_company_payments_patch  # company-wide receipts without invoice-by-invoice settlement
 from web_sporthub_customer_email_v11 import premium_storefront_v11
 
 try:
