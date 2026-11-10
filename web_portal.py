@@ -3,6 +3,9 @@ from web_customer_statement_patch import app
 import web_vehicle_accounts_patch  # register Flask routes before other import-time requests
 import web_company_payments_patch  # company-wide receipts without invoice-by-invoice settlement
 from web_sporthub_customer_email_v11 import premium_storefront_v11
+# Startup route diagnostics (no customer data or credentials).
+print("NAHDA_PAYMENTS_ROUTES registered_before_store="+str(sorted((r.rule,sorted(r.methods)) for r in app.url_map.iter_rules() if r.rule.startswith('/company-payments'))), flush=True)
+
 
 try:
     from sqlalchemy.engine import make_url as _make_url
