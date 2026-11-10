@@ -6,6 +6,15 @@ from web_sporthub_customer_email_v11 import premium_storefront_v11
 # Startup route diagnostics (no customer data or credentials).
 print("NAHDA_PAYMENTS_ROUTES registered_before_store="+str(sorted((r.rule,sorted(r.methods)) for r in app.url_map.iter_rules() if r.rule.startswith('/company-payments'))), flush=True)
 
+try:
+    with app.test_client() as _nahda_test:
+        _pay_health = _nahda_test.get('/company-payments-health')
+        _pay_page = _nahda_test.get('/company-payments')
+    print(f"NAHDA_COMPANY_RECEIPTS_SELFTEST health={_pay_health.status_code} page_no_login={_pay_page.status_code}", flush=True)
+except Exception as _pay_error:
+    print(f"NAHDA_COMPANY_RECEIPTS_SELFTEST_ERROR type={type(_pay_error).__name__}", flush=True)
+
+
 
 try:
     from sqlalchemy.engine import make_url as _make_url
