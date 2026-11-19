@@ -5,6 +5,24 @@
 </style></head><body><header><div class="top"><b>⌂ عقاراتي — لوحة الإدارة التجريبية</b><a href="index.html">العودة إلى الموقع</a></div></header>
 <main class="wrap"><div class="top"><div><h1>إدارة العقارات</h1><p class="muted">إضافة وتعديل وحذف الإعلانات.</p></div><div class="actions"><button class="secondary" onclick="exportData()">تصدير نسخة احتياطية</button><label class="btn secondary">استيراد نسخة<input type="file" accept=".json" hidden onchange="importData(event)"></label></div></div>
 <div class="note">هذه لوحة تجريبية بدون قاعدة بيانات. الإعلانات تحفظ في المتصفح والجهاز الحالي فقط، ولا تظهر تلقائياً للزوار من أجهزتهم. يمكنك تصدير نسخة احتياطية. سنربطها لاحقاً بقاعدة بيانات ولوحة دخول آمنة.</div>
+<section class="panel" id="settingsPanel"><div class="top"><div><h2>إعدادات الموقع العامة</h2><p class="muted">عدّل هوية الموقع وبيانات المكتب وطرق التواصل من هنا.</p></div><button type="button" class="secondary" onclick="resetSettings()">إعادة ضبط الحقول</button></div>
+<form id="settingsForm" class="form">
+<div class="field"><label>اسم الموقع</label><input id="siteName" placeholder="عقاراتي"></div>
+<div class="field"><label>الشعار / العبارة التعريفية</label><input id="siteTagline" placeholder="منصتك العقارية في سوريا"></div>
+<div class="field"><label>عنوان الصفحة الرئيسية</label><input id="heroTitle" placeholder="بيتك القادم يبدأ من هنا"></div>
+<div class="field full"><label>النص التعريفي في الواجهة</label><textarea id="heroText" rows="2"></textarea></div>
+<div class="field"><label>رقم هاتف المكتب</label><input id="officePhone" placeholder="+963..."></div>
+<div class="field"><label>رقم واتساب مع رمز الدولة</label><input id="officeWhatsapp" placeholder="963... بدون +"></div>
+<div class="field"><label>البريد الإلكتروني</label><input id="officeEmail" type="email" placeholder="name@example.com"></div>
+<div class="field"><label>عنوان المكتب</label><input id="officeAddress" placeholder="المدينة - المنطقة - الشارع"></div>
+<div class="field"><label>رابط فيسبوك</label><input id="facebook" type="url" placeholder="https://facebook.com/..."></div>
+<div class="field"><label>رابط إنستغرام</label><input id="instagram" type="url" placeholder="https://instagram.com/..."></div>
+<div class="field"><label>رابط صورة الشعار (اختياري)</label><input id="logoUrl" type="url" placeholder="https://..."></div>
+<div class="field"><label>لون الهوية الأساسي</label><input id="brandColor" type="color" value="#142536" style="height:46px;padding:4px"></div>
+<div class="field"><label>لون الأزرار والتمييز</label><input id="accentColor" type="color" value="#c49a60" style="height:46px;padding:4px"></div>
+<div class="field full"><label>نبذة المكتب في أسفل الموقع</label><textarea id="officeAbout" rows="2"></textarea></div>
+<div class="field full actions"><button type="submit">حفظ إعدادات الموقع</button><span class="muted" id="settingsSaved"></span></div>
+</form></section>
 <section class="panel"><h2 id="heading">إضافة عقار</h2><form id="form" class="form"><input id="pid" type="hidden">
 <div class="field"><label>عنوان الإعلان</label><input id="title" required></div><div class="field"><label>العملية</label><select id="deal"><option>للبيع</option><option>للإيجار</option></select></div><div class="field"><label>نوع العقار</label><select id="kind"><option>شقة</option><option>فيلا</option><option>أرض</option><option>محل تجاري</option><option>مكتب</option><option>مستودع</option></select></div>
 <div class="field"><label>المدينة</label><input id="city" required></div><div class="field"><label>المنطقة</label><input id="area"></div><div class="field"><label>السعر بالدولار</label><input id="price" type="number" min="0" required></div>
@@ -13,7 +31,7 @@
 <div class="field full actions"><button type="submit">حفظ الإعلان</button><button type="button" class="secondary" onclick="resetForm()">إلغاء</button></div></form></section>
 <div class="stats"><div class="stat"><b id="totalStat">0</b><span>إجمالي العقارات</span></div><div class="stat"><b id="availableStat">0</b><span>عقارات متاحة</span></div><div class="stat"><b id="closedStat">0</b><span>محجوز أو منجز</span></div></div><section class="panel"><div class="top"><h2>الإعلانات</h2><b id="count"></b></div><div class="field" style="max-width:360px;margin:10px 0 15px"><label>بحث في الإعلانات</label><input id="adminSearch" placeholder="اكتب اسم العقار أو المدينة..." oninput="draw()"></div><div id="items"></div></section></main>
 <script>
-const KEY='aqarati_properties';
+const KEY='aqarati_properties';\nconst SETTINGS_KEY='aqarati_site_settings';\nconst DEFAULT_SETTINGS={siteName:'عقاراتي',siteTagline:'منصتك العقارية في سوريا',heroTitle:'بيتك القادم يبدأ من هنا',heroText:'اكتشف عقارات مختارة للبيع والإيجار في مختلف المدن السورية. ابحث بسهولة، قارن الخيارات، واعثر على المكان المناسب لك.',officePhone:'',officeWhatsapp:'',officeEmail:'',officeAddress:'',facebook:'',instagram:'',logoUrl:'',brandColor:'#142536',accentColor:'#c49a60',officeAbout:'منصتك للبحث عن العقارات للبيع والإيجار في سوريا.'};\nlet siteSettings={...DEFAULT_SETTINGS};\ntry{siteSettings={...siteSettings,...JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')}}catch(e){}
 const demo=[
 {id:'d1',title:'شقة عائلية بإطلالة مفتوحة',city:'دمشق',area:'المزة',kind:'شقة',deal:'للبيع',price:85000,size:145,beds:3,status:'متاح',i:'photo-1600607687939-ce8a6c25118c'},
 {id:'d2',title:'شقة مفروشة قريبة من الخدمات',city:'حلب',area:'الشهباء',kind:'شقة',deal:'للإيجار',price:350,size:110,beds:2,status:'متاح',i:'photo-1600210492486-724fe5c67fb0'},
@@ -22,7 +40,7 @@ const demo=[
 {id:'d5',title:'محل تجاري على شارع رئيسي',city:'حمص',area:'الإنشاءات',kind:'محل تجاري',deal:'للإيجار',price:500,size:75,beds:0,status:'متاح',i:'photo-1497366754035-f200968a6e72'},
 {id:'d6',title:'شقة حديثة بتشطيب ممتاز',city:'حماة',area:'حي البعث',kind:'شقة',deal:'للبيع',price:63000,size:130,beds:3,status:'متاح',i:'photo-1600566753086-00f18fb6b3ea'}];
 let props;try{const saved=JSON.parse(localStorage.getItem(KEY));props=Array.isArray(saved)?saved:demo.map(x=>({...x}));}catch(e){props=demo.map(x=>({...x}));}
-const el=id=>document.getElementById(id);
+const el=id=>document.getElementById(id);\nfunction loadSettingsForm(){Object.keys(DEFAULT_SETTINGS).forEach(k=>{if(el(k))el(k).value=siteSettings[k]??DEFAULT_SETTINGS[k]})}\nfunction resetSettings(){if(confirm('إعادة الإعدادات للقيم الافتراضية؟')){siteSettings={...DEFAULT_SETTINGS};loadSettingsForm();saveSettings()}}\nfunction saveSettings(){const data={};Object.keys(DEFAULT_SETTINGS).forEach(k=>{if(el(k))data[k]=el(k).value.trim()});siteSettings=data;localStorage.setItem(SETTINGS_KEY,JSON.stringify(siteSettings));el('settingsSaved').textContent='تم حفظ الإعدادات على هذا المتصفح.';setTimeout(()=>{if(el('settingsSaved'))el('settingsSaved').textContent=''},3500)}\nel('settingsForm').addEventListener('submit',e=>{e.preventDefault();saveSettings()});\nloadSettingsForm();
 function persist(){localStorage.setItem(KEY,JSON.stringify(props));draw()}
 function safe(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function draw(){const available=props.filter(p=>(p.status||'متاح')==='متاح').length;el('totalStat').textContent=props.length;el('availableStat').textContent=available;el('closedStat').textContent=props.length-available;const q=(el('adminSearch')?.value||'').trim().toLowerCase();const shown=props.filter(p=>(p.title+' '+p.city+' '+(p.area||'')).toLowerCase().includes(q));el('count').textContent=shown.length+' من '+props.length+' عقار';el('items').innerHTML=shown.map(p=>'<div class="item"><div><b>'+safe(p.title)+'</b><div class="muted">'+safe(p.city)+' - '+safe(p.area)+' · '+safe(p.deal)+' · '+Number(p.price||0).toLocaleString('en-US')+' $ · '+safe(p.status||'متاح')+'</div></div><div class="actions"><button class="secondary" onclick="editItem(\''+p.id+'\')">تعديل</button><button class="danger" onclick="removeItem(\''+p.id+'\')">حذف</button></div></div>').join('')||'<p class="muted">لا توجد إعلانات.</p>'}
