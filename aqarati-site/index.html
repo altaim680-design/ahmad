@@ -72,6 +72,7 @@ $('list').addEventListener('click',e=>{const card=e.target.closest('.property');
 $('list').addEventListener('keydown',e=>{if(e.key==='Enter'){const card=e.target.closest('.property');if(card)card.click()}});
 function close(){ $('modal').classList.remove('show') }$('closeModal').addEventListener('click',close);$('modal').addEventListener('click',e=>{if(e.target===$('modal'))close()});document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
 window.addEventListener('storage',e=>{if(e.key===KEY){try{properties=JSON.parse(e.newValue)||demo}catch(x){properties=demo}render()}});
+applySiteSettings();
 render();
 </script>
 </body></html>
