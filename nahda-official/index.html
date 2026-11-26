@@ -54,7 +54,7 @@
 <div class="field"><label>الخدمة المطلوبة</label><select id="service" name="requested_service"><option>شحن بري دولي</option><option>تخليص جمركي</option><option>ترانزيت</option><option>مناقلة</option><option>خدمات لوجستية</option></select></div>
 <div class="field"><label>نوع الحمولة</label><select id="cargo" name="cargo_type"><option>شاحنة كاملة</option><option>شحن جزئي</option><option>مواد غذائية</option><option>مواد صناعية</option><option>معدات وآليات</option><option>حمولة مبردة</option><option>أخرى</option></select></div>
 <div class="field"><label>الوزن التقريبي</label><input id="weight" name="approx_weight" placeholder="مثال: 20 طن"></div><div class="field"><label>البريد الإلكتروني</label><input id="customerEmail" name="customer_email" type="email" placeholder="name@example.com"></div>
-<div class="field full"><label>تفاصيل إضافية</label><textarea id="details" name="details" placeholder="نوع البضاعة، عدد الطرود، موعد التحميل أو أي تفاصيل مهمة"></textarea></div>
+<div class="field full"><label>تفاصيل إضافية</label><textarea id="details" name="details" placeholder="نوع البضاعة، عدد الطرود، موعد التحميل أو أي تفاصيل مهمة"></textarea></div><div class="field full"><label for="cargoPhotos">صور البضاعة (يمكن اختيار عدة صور)</label><input id="cargoPhotos" name="cargo_photos" type="file" accept="image/*" multiple style="width:100%;padding:12px;border:1px dashed var(--line);border-radius:12px;background:#fff"><small style="display:block;margin-top:7px;color:var(--muted)">اختر حتى 5 صور، بحد أقصى 10 ميغابايت للصورة. ستتم مشاركتها مع تفاصيل الطلب عبر واتساب إذا كان جهازك يدعم مشاركة الملفات.</small><p id="photoNames" style="margin:7px 0 0;font-size:13px"></p></div>
 </div><button class="btn" type="submit">إرسال الطلب ←</button><div class="notice">سيتم تجهيز رسالة واتساب بتفاصيل الطلب. لن يُرسل الطلب إلا بعد ضغطك على زر الإرسال داخل واتساب.</div><p id="quoteStatus" role="status" aria-live="polite" style="margin:14px 0 0;font-weight:700"></p></form><div class="email-strip">للتواصل المباشر: <a href="https://wa.me/963986200350">واتساب +963986200350</a> أو <a href="mailto:nahdasyria1@gmail.com">البريد الإلكتروني</a></div></div></div></section>
 </main>
 <footer class="foot" id="contact"><div class="wrap"><div class="footgrid"><div><a class="brand" href="#" style="color:#fff"><span class="mark">ن</span><span>نهضة سوريا<small style="color:#aebdca">للتخليص الجمركي والنقل بالترانزيت العربي والدولي</small></span></a><p>شريككم في تنسيق الشحن البري الدولي والخدمات الجمركية واللوجستية.</p></div><div><h3>روابط سريعة</h3><p><a href="#services">خدماتنا</a><br><a href="#destinations">الوجهات</a><br><a href="#quote">طلب عرض سعر</a></p></div><div><h3>تواصل معنا</h3><p>الهاتف وواتساب: <a href="https://wa.me/963986200350" dir="ltr">+963 986 200 350</a><br>البريد الإلكتروني: <a href="mailto:nahdasyria1@gmail.com" dir="ltr">nahdasyria1@gmail.com</a><br>نستقبل استفسارات الشحن وطلبات عروض الأسعار عبر الهاتف والبريد الإلكتروني.</p></div></div><div class="copyright">© <span id="year"></span> نهضة سوريا. جميع الحقوق محفوظة.</div></div></footer>
@@ -96,7 +96,20 @@ document.getElementById('backTop')?.addEventListener('click',()=>window.scrollTo
 const quoteForm=document.getElementById('quoteForm');
 if(quoteForm){
  const quoteStatus=document.getElementById('quoteStatus');
- quoteForm.addEventListener('submit',(event)=>{
+ const photoInput=document.getElementById('cargoPhotos');
+ const photoNames=document.getElementById('photoNames');
+ photoInput?.addEventListener('change',()=>{
+  const files=Array.from(photoInput.files||[]);
+  if(files.length>5 || files.some(file=>file.size>10*1024*1024)){
+   photoInput.value='';
+   photoNames.textContent='يرجى اختيار 5 صور كحد أقصى، وألا يتجاوز حجم الصورة الواحدة 10 ميغابايت.';
+   photoNames.style.color='#b42318';
+   return;
+  }
+  photoNames.textContent=files.length?'الصور المختارة: '+files.map(file=>file.name).join('، '):'';
+  photoNames.style.color='var(--muted)';
+ });
+ quoteForm.addEventListener('submit',async(event)=>{
   event.preventDefault();
   if(!quoteForm.reportValidity()) return;
   const data=new FormData(quoteForm);
@@ -109,10 +122,33 @@ if(quoteForm){
   const message=['طلب عرض سعر جديد - موقع نهضة سوريا',''].concat(
    Object.entries(labels).filter(([key])=>String(data.get(key)||'').trim()).map(([key,label])=>label+': '+String(data.get(key)).trim())
   ).join('\n');
-  quoteStatus.textContent='سيتم فتح واتساب مع تفاصيل طلبك. اضغط إرسال داخل واتساب لإتمام الإرسال.';
+  const files=Array.from(photoInput?.files||[]);
+  if(files.length>5 || files.some(file=>file.size>10*1024*1024)){
+   quoteStatus.textContent='عدد الصور أو حجمها أكبر من الحد المسموح.';
+   quoteStatus.style.color='#b42318';
+   return;
+  }
+  if(files.length && navigator.canShare && navigator.share && navigator.canShare({files})){
+   try{
+    quoteStatus.textContent='اختر واتساب من قائمة المشاركة لإرسال تفاصيل الطلب والصور معاً.';
+    quoteStatus.style.color='#16834a';
+    await navigator.share({title:'طلب عرض سعر - نهضة سوريا',text:message,files});
+    quoteStatus.textContent='تم فتح قائمة المشاركة. تأكد من اختيار واتساب ثم اضغط إرسال داخله.';
+   }catch(error){
+    if(error.name==='AbortError'){
+     quoteStatus.textContent='تم إلغاء المشاركة. لم يتم إرسال الطلب.';
+     quoteStatus.style.color='#9a6700';
+    }else{
+     quoteStatus.textContent='تعذرت مشاركة الصور تلقائياً. افتح واتساب وأرفق الصور يدوياً مع تفاصيل الطلب.';
+     quoteStatus.style.color='#b42318';
+    }
+   }
+   return;
+  }
+  const textMessage=message+(files.length?'\n\nعدد الصور المختارة: '+files.length+' (يرجى إرفاق الصور يدوياً داخل واتساب).':'');
+  quoteStatus.textContent=files.length?'جهازك لا يدعم إرفاق الصور تلقائياً. سيفتح واتساب بالتفاصيل، أرفق الصور يدوياً قبل الإرسال.':'سيتم فتح واتساب مع تفاصيل طلبك. اضغط إرسال داخل واتساب لإتمام الإرسال.';
   quoteStatus.style.color='#16834a';
-  const url='https://wa.me/963986200350?text='+encodeURIComponent(message);
-  window.location.href=url;
+  window.location.href='https://wa.me/963986200350?text='+encodeURIComponent(textMessage);
  });
 }
 </script>
